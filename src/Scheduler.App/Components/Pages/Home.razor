@@ -8,7 +8,7 @@
     <p>
         Учебный сервис: <strong>transactional outbox</strong>, внутренняя очередь <code>Channel</code>,
         идемпотентность через <strong>inbox</strong>, политика повторов и <strong>DLQ</strong>.
-        Хранилище — EF Core InMemory.
+        Хранилище — SQLite, работа через ORM EF Core.
     </p>
     <p>
         Для демо сбоев в payload можно передать JSON с полем <code>failUntilAttempt</code>
