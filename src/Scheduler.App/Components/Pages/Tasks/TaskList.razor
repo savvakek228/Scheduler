@@ -1,0 +1,76 @@
+@page "/tasks"
+@inject ISchedulerQueryService Queries
+
+<PageTitle>Задачи</PageTitle>
+
+<h2>Задачи</h2>
+
+@if (_error is not null)
+{
+    <p style="color:#f85149">@_error</p>
+}
+
+@if (_items is null)
+{
+    <p>Загрузка…</p>
+}
+else if (_items.Count == 0)
+{
+    <p>Задач пока нет.</p>
+}
+else
+{
+    <div class="card" style="overflow-x:auto">
+        <table>
+            <thead>
+                <tr>
+                    <th>Id</th>
+                    <th>Run at (UTC)</th>
+                    <th>Статус</th>
+                    <th>Попытки</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var t in _items)
+            {
+                <tr>
+                    <td><code>@t.Id.ToString("N")[..8]…</code></td>
+                    <td>@t.RunAt.ToString("u")</td>
+                    <td><span class="badge">@t.Status</span></td>
+                    <td>@t.AttemptCount</td>
+                    <td><a href="/tasks/@t.Id">Открыть</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+<button class="btn btn-secondary" @onclick="RefreshAsync" disabled="@_loading">Обновить</button>
+
+@code {
+    private IReadOnlyList<TaskSummaryDto>? _items;
+    private string? _error;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _items = await Queries.GetRecentTasksAsync(100, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

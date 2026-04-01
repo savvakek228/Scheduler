@@ -1,0 +1,82 @@
+@page "/tasks/create"
+@inject IScheduleTaskService Scheduling
+@inject NavigationManager Nav
+
+<PageTitle>Создать задачу</PageTitle>
+
+<h2>Создать задачу</h2>
+
+<div class="card">
+    <EditForm Model="_model" OnValidSubmit="SubmitAsync">
+        <label>Payload (текст или JSON)</label>
+        <InputTextArea @bind-Value="_model.Payload" rows="6" />
+
+        <label>Запуск не ранее (UTC)</label>
+        <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_model.RunAtLocal" />
+
+        <label>Ключ идемпотентности (необязательно)</label>
+        <InputText @bind-Value="_model.IdempotencyKey" />
+
+        @if (_message is not null)
+        {
+            <p style="color:#3fb950">@_message</p>
+        }
+        @if (_error is not null)
+        {
+            <p style="color:#f85149">@_error</p>
+        }
+
+        <div style="margin-top:1rem">
+            <button class="btn" type="submit" disabled="@_busy">Создать</button>
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    private readonly FormModel _model = new();
+    private string? _message;
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        _model.RunAtLocal = DateTime.Now;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _error = null;
+        _message = null;
+        try
+        {
+            var runAt = DateTime.SpecifyKind(_model.RunAtLocal, DateTimeKind.Local).ToUniversalTime();
+            var result = await Scheduling.ScheduleAsync(
+                _model.Payload,
+                runAt,
+                string.IsNullOrWhiteSpace(_model.IdempotencyKey) ? null : _model.IdempotencyKey.Trim(),
+                CancellationToken.None);
+
+            _message = result.WasCreated
+                ? $"Создана задача {result.TaskId}"
+                : $"Идемпотентный повтор: уже есть задача {result.TaskId}";
+
+            Nav.NavigateTo($"/tasks/{result.TaskId}");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class FormModel
+    {
+        public string Payload { get; set; } = "{\"hello\":\"world\"}";
+        public DateTime RunAtLocal { get; set; }
+        public string? IdempotencyKey { get; set; }
+    }
+}

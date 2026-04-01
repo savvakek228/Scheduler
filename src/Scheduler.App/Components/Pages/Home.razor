@@ -1,0 +1,19 @@
+@page "/"
+
+<PageTitle>Главная</PageTitle>
+
+<h2>Планировщик задач</h2>
+
+<div class="card">
+    <p>
+        Учебный сервис: <strong>transactional outbox</strong>, внутренняя очередь <code>Channel</code>,
+        идемпотентность через <strong>inbox</strong>, политика повторов и <strong>DLQ</strong>.
+        Хранилище — EF Core InMemory.
+    </p>
+    <p>
+        Для демо сбоев в payload можно передать JSON с полем <code>failUntilAttempt</code>
+        (число попыток с ошибкой до успеха), например:
+        <code>{"note":"demo","failUntilAttempt":3}</code>
+    </p>
+    <a class="btn" href="/tasks/create">Создать задачу</a>
+</div>

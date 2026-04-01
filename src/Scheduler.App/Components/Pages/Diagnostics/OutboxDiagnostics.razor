@@ -1,0 +1,70 @@
+@page "/diagnostics/outbox"
+@inject ISchedulerQueryService Queries
+
+<PageTitle>Outbox</PageTitle>
+
+<h2>Диагностика outbox</h2>
+
+@if (_error is not null)
+{
+    <p style="color:#f85149">@_error</p>
+}
+
+@if (_items is null)
+{
+    <p>Загрузка…</p>
+}
+else
+{
+    <div class="card" style="overflow-x:auto">
+        <table>
+            <thead>
+                <tr>
+                    <th>Id</th>
+                    <th>MessageId</th>
+                    <th>TaskId</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Published</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var o in _items)
+            {
+                <tr>
+                    <td>@o.Id</td>
+                    <td><code>@o.MessageId.ToString("N")[..12]…</code></td>
+                    <td><a href="/tasks/@o.TaskId"><code>@o.TaskId.ToString("N")[..8]…</code></a></td>
+                    <td>@o.EnvelopeType</td>
+                    <td><span class="badge">@o.Status</span></td>
+                    <td>@o.CreatedAt.ToString("u")</td>
+                    <td>@(o.PublishedAt?.ToString("u") ?? "—")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+<button class="btn btn-secondary" @onclick="RefreshAsync">Обновить</button>
+
+@code {
+    private IReadOnlyList<OutboxItemDto>? _items;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        _error = null;
+        try
+        {
+            _items = await Queries.GetOutboxDiagnosticsAsync(100, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

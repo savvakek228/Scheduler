@@ -1,0 +1,98 @@
+@page "/dead-letters"
+@inject ISchedulerQueryService Queries
+@inject ISchedulerPersistence Persistence
+
+<PageTitle>Dead letter</PageTitle>
+
+<h2>Dead letter queue</h2>
+
+@if (_error is not null)
+{
+    <p style="color:#f85149">@_error</p>
+}
+
+@if (_items is null)
+{
+    <p>Загрузка…</p>
+}
+else if (_items.Count == 0)
+{
+    <p>Пусто.</p>
+}
+else
+{
+    <div class="card" style="overflow-x:auto">
+        <table>
+            <thead>
+                <tr>
+                    <th>DLQ Id</th>
+                    <th>Task Id</th>
+                    <th>Причина</th>
+                    <th>Попыток</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var d in _items)
+            {
+                <tr>
+                    <td>@d.Id</td>
+                    <td><a href="/tasks/@d.TaskId"><code>@d.TaskId</code></a></td>
+                    <td>@d.Reason</td>
+                    <td>@d.FinalAttemptCount</td>
+                    <td>
+                        <button class="btn btn-secondary" @onclick="() => ReplayAsync(d.Id)" disabled="@_busy">Повторить</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+<button class="btn btn-secondary" @onclick="RefreshAsync" disabled="@_busy">Обновить</button>
+
+@code {
+    private IReadOnlyList<DeadLetterDto>? _items;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            _items = await Queries.GetDeadLettersAsync(100, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReplayAsync(long id)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Persistence.TryReplayDeadLetterAsync(id, CancellationToken.None);
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

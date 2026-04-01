@@ -1,0 +1,65 @@
+@page "/tasks/{Id:guid}"
+@inject ISchedulerQueryService Queries
+
+<PageTitle>Задача</PageTitle>
+
+@if (_task is null && _error is null)
+{
+    <p>Загрузка…</p>
+}
+else if (_error is not null)
+{
+    <p style="color:#f85149">@_error</p>
+}
+else if (_task is null)
+{
+    <p>Не найдено.</p>
+}
+else
+{
+    <h2>Задача <span class="badge">@_task.Status</span></h2>
+    <div class="card">
+        <p><strong>Id:</strong> <code>@_task.Id</code></p>
+        <p><strong>Run at (UTC):</strong> @_task.RunAt.ToString("u")</p>
+        <p><strong>Попытки:</strong> @_task.AttemptCount</p>
+        @if (_task.NextAttemptAt is not null)
+        {
+            <p><strong>След. попытка (UTC):</strong> @_task.NextAttemptAt.Value.ToString("u")</p>
+        }
+        @if (!string.IsNullOrEmpty(_task.IdempotencyKey))
+        {
+            <p><strong>Idempotency:</strong> @_task.IdempotencyKey</p>
+        }
+        @if (!string.IsNullOrEmpty(_task.LastError))
+        {
+            <p><strong>Последняя ошибка:</strong> @_task.LastError</p>
+        }
+        <label>Payload</label>
+        <pre style="white-space:pre-wrap;background:#0d1117;padding:0.75rem;border-radius:6px;border:1px solid #30363d">@_task.Payload</pre>
+    </div>
+}
+
+<button class="btn btn-secondary" @onclick="LoadAsync">Обновить</button>
+<a class="btn btn-secondary" href="/tasks" style="margin-left:.5rem">К списку</a>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private TaskResponse? _task;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _task = await Queries.GetTaskAsync(Id, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}
