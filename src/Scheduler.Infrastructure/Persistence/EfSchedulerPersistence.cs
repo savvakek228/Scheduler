@@ -87,29 +87,29 @@ public sealed class EfSchedulerPersistence(AppDbContext db, IClock clock) : ISch
     public async Task<bool> TrySetTaskRunningAsync(Guid taskId, int expectedVersion, CancellationToken cancellationToken)
     {
         var now = clock.UtcNow;
-        var updated = await db.ScheduledTasks
-            .Where(t =>
-                t.Id == taskId
-                && t.Version == expectedVersion
-                && (t.Status == TaskStatus.Queued || t.Status == TaskStatus.Pending)
-                && (t.NextAttemptAt == null || t.NextAttemptAt <= now))
-            .ExecuteUpdateAsync(
-                s => s
-                    .SetProperty(t => t.Status, TaskStatus.Running)
-                    .SetProperty(t => t.Version, t => t.Version + 1),
-                cancellationToken);
+        var task = await db.ScheduledTasks.FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);
+        if (task is null
+            || task.Version != expectedVersion
+            || (task.Status != TaskStatus.Queued && task.Status != TaskStatus.Pending)
+            || (task.NextAttemptAt.HasValue && task.NextAttemptAt > now))
+            return false;
 
-        return updated > 0;
+        task.Status = TaskStatus.Running;
+        task.Version++;
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
-    public Task MarkTaskCompletedAsync(Guid taskId, CancellationToken cancellationToken) =>
-        db.ScheduledTasks.Where(t => t.Id == taskId)
-            .ExecuteUpdateAsync(
-                s => s
-                    .SetProperty(t => t.Status, TaskStatus.Completed)
-                    .SetProperty(t => t.LastError, (string?)null)
-                    .SetProperty(t => t.NextAttemptAt, (DateTimeOffset?)null),
-                cancellationToken);
+    public async Task MarkTaskCompletedAsync(Guid taskId, CancellationToken cancellationToken)
+    {
+        var task = await db.ScheduledTasks.FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);
+        if (task is null)
+            return;
+        task.Status = TaskStatus.Completed;
+        task.LastError = null;
+        task.NextAttemptAt = null;
+        await db.SaveChangesAsync(cancellationToken);
+    }
 
     public async Task ScheduleRetryAsync(
         Guid taskId,

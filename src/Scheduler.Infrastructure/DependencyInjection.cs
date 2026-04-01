@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Scheduler.Application;
 using Scheduler.Application.Messaging;
 using Scheduler.Application.Persistence;
@@ -16,7 +18,15 @@ public static class DependencyInjection
     {
         services.AddSchedulerApplication();
         services.Configure<TaskChannelOptions>(_ => { });
-        services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("scheduler"));
+        services.AddDbContext<AppDbContext>((sp, o) =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var configured = config["Scheduler:SqlitePath"];
+            var dbPath = string.IsNullOrWhiteSpace(configured)
+                ? Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, "scheduler.sqlite")
+                : configured;
+            o.UseSqlite($"Data Source={dbPath}");
+        });
         services.AddScoped<ISchedulerPersistence, EfSchedulerPersistence>();
         services.AddSingleton<ITaskProcessChannel, TaskProcessChannel>();
         services.AddScoped<ITaskExecutor, DefaultTaskExecutor>();
