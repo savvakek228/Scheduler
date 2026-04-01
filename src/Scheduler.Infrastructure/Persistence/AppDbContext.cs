@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Scheduler.Domain.DeadLetters;
 using Scheduler.Domain.Inbox;
 using Scheduler.Domain.Outbox;
@@ -15,9 +16,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        var dateTimeOffsetTicks = new ValueConverter<DateTimeOffset, long>(
+            v => v.UtcTicks,
+            v => new DateTimeOffset(v, TimeSpan.Zero));
+
+        var dateTimeOffsetTicksNullable = new ValueConverter<DateTimeOffset?, long?>(
+            v => v.HasValue ? v.Value.UtcTicks : null,
+            v => v.HasValue ? new DateTimeOffset(v.Value, TimeSpan.Zero) : null);
+
         modelBuilder.Entity<ScheduledTask>(b =>
         {
             b.HasKey(x => x.Id);
+            b.Property(x => x.CreatedAt).HasConversion(dateTimeOffsetTicks);
+            b.Property(x => x.RunAt).HasConversion(dateTimeOffsetTicks);
+            b.Property(x => x.NextAttemptAt).HasConversion(dateTimeOffsetTicksNullable);
         });
 
         modelBuilder.Entity<OutboxMessage>(b =>

@@ -167,7 +167,7 @@ public sealed class EfSchedulerPersistence(AppDbContext db, IClock clock) : ISch
 
     public async Task<IReadOnlyList<DeadLetterItem>> ListDeadLettersAsync(int take, CancellationToken cancellationToken) =>
         await db.DeadLetterItems.AsNoTracking()
-            .OrderByDescending(d => d.CreatedAt)
+            .OrderByDescending(d => d.Id)
             .Take(take)
             .ToListAsync(cancellationToken);
 
