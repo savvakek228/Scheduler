@@ -8,7 +8,7 @@ public sealed class OutboxRelayHostedService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(400));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
 
         try
         {
