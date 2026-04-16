@@ -107,6 +107,62 @@ dotnet run
 
 Интеграционные тесты подставляют свой временный файл через ту же настройку.
 
+## Production деплой на VPS (Docker)
+
+### Что добавлено для прод-среды
+
+- `Dockerfile` — multi-stage сборка и публикация `Scheduler.App`
+- `docker-compose.production.yml` — запуск контейнера с volume для SQLite
+- `.env.production.example` — пример параметров окружения
+- `deploy.production.sh` — скрипт деплоя на сервере
+
+### Зависимости на VPS
+
+- Docker Engine 24+
+- Docker Compose plugin (`docker compose`)
+- Git
+- Открытый TCP-порт для HTTP (по умолчанию `8080`)
+
+### Подготовка ветки production
+
+```bash
+git checkout master
+git pull
+git checkout -b production
+```
+
+### Первый деплой на VPS
+
+```bash
+# На локальной машине
+git push -u origin production
+
+# На VPS
+git clone -b production <your-repo-url> scheduler
+cd scheduler
+cp .env.production.example .env.production
+```
+
+При необходимости измените `SCHEDULER_HTTP_PORT` в `.env.production`.
+
+```bash
+bash deploy.production.sh
+```
+
+Проверка:
+
+```bash
+docker compose -f docker-compose.production.yml ps
+curl http://127.0.0.1:8080
+```
+
+### Обновление после новых коммитов
+
+```bash
+git pull
+bash deploy.production.sh
+```
+
 ## Тесты
 
 ```bash

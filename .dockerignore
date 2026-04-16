@@ -1,0 +1,13 @@
+.git
+.gitignore
+.idea
+.vs
+.vscode
+**/bin
+**/obj
+**/*.user
+**/*.suo
+**/*.cache
+**/TestResults
+**/.DS_Store
+README.md

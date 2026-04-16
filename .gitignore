@@ -1,3 +1,17 @@
 /src/Scheduler.App/scheduler.sqlite
 /src/Scheduler.App/scheduler.sqlite-shm
 /src/Scheduler.App/scheduler.sqlite-wal
+
+# Build outputs
+**/bin/
+**/obj/
+
+# IDE folders
+.idea/
+.vs/
+.vscode/
+
+# Logs and local env files
+*.log
+.env
+.env.local
