@@ -1,0 +1,19 @@
+services:
+  scheduler:
+    container_name: scheduler-app
+    image: scheduler-app:production
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${SCHEDULER_HTTP_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Scheduler__SqlitePath: /app/data/scheduler.sqlite
+    volumes:
+      - scheduler-data:/app/data
+
+volumes:
+  scheduler-data:
