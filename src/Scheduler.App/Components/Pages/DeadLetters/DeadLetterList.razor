@@ -4,53 +4,251 @@
 
 <PageTitle>Dead letter</PageTitle>
 
-<h2>Dead letter queue</h2>
-
-@if (_error is not null)
-{
-    <p style="color:#f85149">@_error</p>
-}
-
-@if (_items is null)
-{
-    <p>Загрузка…</p>
-}
-else if (_items.Count == 0)
-{
-    <p>Пусто.</p>
-}
-else
-{
-    <div class="card" style="overflow-x:auto">
-        <table>
-            <thead>
-                <tr>
-                    <th>DLQ Id</th>
-                    <th>Task Id</th>
-                    <th>Причина</th>
-                    <th>Попыток</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var d in _items)
-            {
-                <tr>
-                    <td>@d.Id</td>
-                    <td><a href="/tasks/@d.TaskId"><code>@d.TaskId</code></a></td>
-                    <td>@d.Reason</td>
-                    <td>@d.FinalAttemptCount</td>
-                    <td>
-                        <button class="btn btn-secondary" @onclick="() => ReplayAsync(d.Id)" disabled="@_busy">Повторить</button>
-                    </td>
-                </tr>
-            }
-            </tbody>
-        </table>
+<div class="dlq-container">
+    <div class="dlq-header">
+        <h2 class="dlq-title">Dead letter queue</h2>
+        <button class="btn btn-refresh" @onclick="RefreshAsync" disabled="@_busy">
+            Обновить
+        </button>
     </div>
-}
 
-<button class="btn btn-secondary" @onclick="RefreshAsync" disabled="@_busy">Обновить</button>
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger">
+            @_error
+        </div>
+    }
+
+    @if (_items is null)
+    {
+        <div class="state-message">
+            <div class="spinner"></div>
+            <p>Загрузка данных…</p>
+        </div>
+    }
+    else if (_items.Count == 0)
+    {
+        <div class="state-message">
+            <p>Пусто.</p>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="dlq-table">
+                <thead>
+                    <tr>
+                        <th>DLQ Id</th>
+                        <th>Task Id</th>
+                        <th>Причина</th>
+                        <th>Попыток</th>
+                        <th style="text-align: right;">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in _items)
+                    {
+                        <tr>
+                            <td class="cell-id">@d.Id</td>
+                            <td>
+                                <a href="/tasks/@d.TaskId" class="task-link">
+                                    <code>@d.TaskId</code>
+                                </a>
+                            </td>
+                            <td class="cell-reason">@d.Reason</td>
+                            <td>
+                                <span class="badge-count">@d.FinalAttemptCount</span>
+                            </td>
+                            <td style="text-align: right;">
+                                <button class="btn btn-replay" @onclick="() => ReplayAsync(d.Id)" disabled="@_busy">
+                                    Повторить
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<style>
+    .dlq-container {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .dlq-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .dlq-title {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    .card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        overflow-x: auto;
+    }
+
+    .dlq-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 0.9rem;
+    }
+
+        .dlq-table th {
+            background-color: #f8fafc;
+            padding: 0.85rem 1.25rem;
+            font-weight: 600;
+            color: #64748b;
+            border-bottom: 1px solid #e2e8f0;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+        }
+
+        .dlq-table td {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+            vertical-align: middle;
+        }
+
+        .dlq-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .dlq-table tr:hover td {
+            background-color: #f8fafc;
+        }
+
+    .cell-id {
+        font-family: monospace;
+        color: #64748b;
+        font-weight: 500;
+    }
+
+    .task-link {
+        color: #4f46e5;
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+        .task-link code {
+            background: #f1f5f9;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: #334155;
+            border: 1px solid #e2e8f0;
+        }
+
+        .task-link:hover code {
+            background: #e2e8f0;
+            color: #4f46e5;
+        }
+
+    .cell-reason {
+        color: #e11d48;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+    }
+
+    .badge-count {
+        background-color: #f1f5f9;
+        color: #475569;
+        padding: 0.15rem 0.5rem;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.8rem;
+    }
+
+    .btn {
+        font-family: inherit;
+        font-size: 0.85rem;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+    .btn-refresh {
+        background-color: #008000;
+        border-color: #cbd5e1;
+        color: white;
+    }
+
+        .btn-refresh:hover:not(:disabled) {
+            background-color: #f8fafc;
+            border-color: #94a3b8;
+        }
+
+    .btn-replay {
+        background-color: #4f46e5;
+        color: #ffffff;
+        font-weight: 600;
+    }
+
+        .btn-replay:hover:not(:disabled) {
+            background-color: #4338ca;
+        }
+
+    .alert {
+        padding: 1rem 1.25rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+    }
+
+    .alert-danger {
+        background-color: #fef2f2;
+        border: 1px solid #fee2e2;
+        color: #991b1b;
+    }
+
+    .state-message {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 2rem;
+        color: #64748b;
+        gap: 1rem;
+    }
+
+    .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #4f46e5;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @@keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
 
 @code {
     private IReadOnlyList<DeadLetterDto>? _items;

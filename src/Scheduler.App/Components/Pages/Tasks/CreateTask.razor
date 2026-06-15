@@ -4,33 +4,185 @@
 
 <PageTitle>Создать задачу</PageTitle>
 
-<h2>Создать задачу</h2>
+<div class="form-container">
+    <h2 class="form-title">Создать задачу</h2>
 
-<div class="card">
-    <EditForm Model="_model" OnValidSubmit="SubmitAsync">
-        <label>Payload (текст или JSON)</label>
-        <InputTextArea @bind-Value="_model.Payload" rows="6" />
+    <div class="card">
+        <EditForm Model="_model" OnValidSubmit="SubmitAsync" class="task-form">
+            <div class="form-group">
+                <label class="form-label">Payload (текст или JSON)</label>
+                <InputTextArea @bind-Value="_model.Payload" rows="8" class="form-control code-input" />
+            </div>
 
-        <label>Запуск не ранее (UTC)</label>
-        <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_model.RunAtLocal" />
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Запуск не ранее (UTC)</label>
+                    <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_model.RunAtLocal" class="form-control" />
+                </div>
 
-        <label>Ключ идемпотентности (необязательно)</label>
-        <InputText @bind-Value="_model.IdempotencyKey" />
+                <div class="form-group">
+                    <label class="form-label">Ключ идемпотентности <span class="label-optional">(необязательно)</span></label>
+                    <InputText @bind-Value="_model.IdempotencyKey" class="form-control" />
+                </div>
+            </div>
 
-        @if (_message is not null)
-        {
-            <p style="color:#3fb950">@_message</p>
-        }
-        @if (_error is not null)
-        {
-            <p style="color:#f85149">@_error</p>
-        }
+            @if (_message is not null)
+            {
+                <div class="alert alert-success">
+                    @_message
+                </div>
+            }
+            @if (_error is not null)
+            {
+                <div class="alert alert-danger">
+                    @_error
+                </div>
+            }
 
-        <div style="margin-top:1rem">
-            <button class="btn" type="submit" disabled="@_busy">Создать</button>
-        </div>
-    </EditForm>
+            <div class="form-actions">
+                <button class="btn btn-submit" type="submit" disabled="@_busy">
+                    Создать
+                </button>
+            </div>
+        </EditForm>
+    </div>
 </div>
+
+<style>
+    .form-container {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .form-title {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    .card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        padding: 2rem 2.5rem;
+    }
+
+    .task-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .form-label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #475569;
+    }
+
+    .label-optional {
+        color: #94a3b8;
+        font-weight: 400;
+        font-size: 0.8rem;
+    }
+
+    .form-control {
+        font-family: inherit;
+        font-size: 0.95rem;
+        padding: 0.65rem 0.75rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        color: #1e293b;
+        background-color: #ffffff;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        width: 100%;
+    }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #008000;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+        }
+
+    .code-input {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.875rem;
+        resize: vertical;
+        background-color: #f8fafc;
+    }
+
+        .code-input:focus {
+            background-color: #ffffff;
+        }
+
+    .form-actions {
+        padding-top: 0.5rem;
+        border-top: 1px solid #f1f5f9;
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .btn {
+        font-family: inherit;
+        font-size: 0.9rem;
+        font-weight: 600;
+        padding: 0.65rem 2rem;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+    .btn-submit {
+        background-color: #008000;
+        color: #ffffff;
+    }
+
+        .btn-submit:hover:not(:disabled) {
+            background-color: #008000;
+        }
+
+    .alert {
+        padding: 0.85rem 1rem;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    .alert-success {
+        background-color: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        color: #15803d;
+    }
+
+    .alert-danger {
+        background-color: #fef2f2;
+        border: 1px solid #fee2e2;
+        color: #b91c1c;
+    }
+</style>
 
 @code {
     private readonly FormModel _model = new();

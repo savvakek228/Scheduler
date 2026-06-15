@@ -1,11 +1,114 @@
 @inherits LayoutComponentBase
 
-<div class="page">
-    <header>
-        <h1 style="margin:0;font-size:1.35rem">Scheduler</h1>
-        <NavMenu />
-    </header>
-    <main>
-        @Body
+<div class="page-container">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon">✔</div>
+            <h1 class="brand-title">Планировщик задач</h1>
+        </div>
+        <nav class="navigation">
+            <NavMenu />
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        <section class="content-body">
+            @Body
+        </section>
     </main>
 </div>
+
+<style>
+    :root {
+        --bg-main: #f8f9fa;
+        --bg-sidebar: #ffffff;
+        --text-primary: #2d3748;
+        --text-muted: #718096;
+        --accent-color: #008000;
+        --border-color: #e2e8f0;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+    }
+
+    .page-container {
+        display: flex;
+        height: 100vh;
+        background-color: var(--bg-main);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: var(--text-primary);
+        overflow: hidden;
+
+        .sidebar {
+            width: 290px;
+            min-width: 260px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 1.5rem;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .brand-icon {
+            background-color: var(--accent-color);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .brand-title {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+        }
+
+        .navigation {
+            flex: 1;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .top-bar {
+            background-color: #ffffff;
+            padding: 1.25rem 2.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .page-title {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .content-body {
+            padding: 2.5rem;
+            flex: 1;
+            overflow-y: auto;
+        }
+</style>

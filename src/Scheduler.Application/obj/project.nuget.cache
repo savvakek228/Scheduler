@@ -1,10 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "fUksX+eP7nw=",
+  "dgSpecHash": "dBFTVu1jagk=",
   "success": true,
-  "projectFilePath": "C:\\Users\\user\\source\\repos\\project\\src\\Scheduler.Application\\Scheduler.Application.csproj",
+  "projectFilePath": "C:\\Users\\artem\\OneDrive\\Документы\\GitHub\\Scheduler\\src\\Scheduler.Application\\Scheduler.Application.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\user\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\9.0.0\\microsoft.extensions.dependencyinjection.abstractions.9.0.0.nupkg.sha512"
+    "C:\\Users\\artem\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\9.0.0\\microsoft.extensions.dependencyinjection.abstractions.9.0.0.nupkg.sha512"
   ],
   "logs": []
 }

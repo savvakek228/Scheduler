@@ -3,51 +3,265 @@
 
 <PageTitle>Задачи</PageTitle>
 
-<h2>Задачи</h2>
-
-@if (_error is not null)
-{
-    <p style="color:#f85149">@_error</p>
-}
-
-@if (_items is null)
-{
-    <p>Загрузка…</p>
-}
-else if (_items.Count == 0)
-{
-    <p>Задач пока нет.</p>
-}
-else
-{
-    <div class="card" style="overflow-x:auto">
-        <table>
-            <thead>
-                <tr>
-                    <th>Id</th>
-                    <th>Run at (UTC)</th>
-                    <th>Статус</th>
-                    <th>Попытки</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var t in _items)
-            {
-                <tr>
-                    <td><code>@t.Id.ToString("N")[..8]…</code></td>
-                    <td>@t.RunAt.ToString("u")</td>
-                    <td><span class="badge">@t.Status</span></td>
-                    <td>@t.AttemptCount</td>
-                    <td><a href="/tasks/@t.Id">Открыть</a></td>
-                </tr>
-            }
-            </tbody>
-        </table>
+<div class="tasks-container">
+    <div class="tasks-header">
+        <h2 class="tasks-title">Задачи</h2>
+        <button class="btn btn-refresh" @onclick="RefreshAsync" disabled="@_loading">
+            Обновить
+        </button>
     </div>
-}
 
-<button class="btn btn-secondary" @onclick="RefreshAsync" disabled="@_loading">Обновить</button>
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger">
+            @_error
+        </div>
+    }
+
+    @if (_items is null)
+    {
+        <div class="state-message">
+            <div class="spinner"></div>
+            <p>Загрузка списка задач…</p>
+        </div>
+    }
+    else if (_items.Count == 0)
+    {
+        <div class="state-message">
+            <p>Задач пока нет.</p>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <table class="tasks-table">
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Созданно (UTC)</th>
+                        <th>Статус</th>
+                        <th>Попытки</th>
+                        <th style="text-align: right;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in _items)
+                    {
+                        <tr>
+                            <td class="cell-id">
+                                <code title="@t.Id">@t.Id.ToString("N")[..8]…</code>
+                            </td>
+                            <td class="cell-date">@t.RunAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td>
+                                <span class="status-badge status-@t.Status.ToString().ToLower()">@t.Status</span>
+                            </td>
+                            <td>
+                                <span class="badge-count">@t.AttemptCount</span>
+                            </td>
+                            <td style="text-align: right;">
+                                <a href="/tasks/@t.Id" class="btn-open">Открыть</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<style>
+    .tasks-container {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .tasks-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .tasks-title {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    .card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        overflow-x: auto;
+    }
+
+    .tasks-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 0.9rem;
+    }
+
+        .tasks-table th {
+            background-color: #f8fafc;
+            padding: 0.85rem 1.25rem;
+            font-weight: 600;
+            color: #64748b;
+            border-bottom: 1px solid #e2e8f0;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+        }
+
+        .tasks-table td {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+            vertical-align: middle;
+        }
+
+        .tasks-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .tasks-table tr:hover td {
+            background-color: #f8fafc;
+        }
+
+    .cell-id code {
+        background: #f1f5f9;
+        color: #334155;
+        padding: 0.2rem 0.4rem;
+        border-radius: 4px;
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 0.85rem;
+        border: 1px solid #e2e8f0;
+    }
+
+    .cell-date {
+        font-variant-numeric: tabular-nums;
+        color: #475569;
+    }
+
+    .badge-count {
+        background-color: #f1f5f9;
+        color: #475569;
+        padding: 0.15rem 0.5rem;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.8rem;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        padding: 0.15rem 0.5rem;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: capitalize;
+    }
+
+        .status-badge.status-completed,
+        .status-badge.status-success {
+            background-color: #f0fdf4;
+            color: #166534;
+        }
+
+        .status-badge.status-pending,
+        .status-badge.status-queued {
+            background-color: #fefbc8;
+            color: #713f12;
+        }
+
+        .status-badge.status-failed,
+        .status-badge.status-error {
+            background-color: #fef2f2;
+            color: #991b1b;
+        }
+
+    .btn-open {
+        display: inline-flex;
+        text-decoration: none;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: white;
+        background-color: #008000;
+        padding: 0.4rem 0.8rem;
+        border-radius: 6px;
+        transition: all 0.15s ease;
+    }
+
+        .btn-open:hover {
+            background-color: #008000;
+            color: white;
+        }
+
+    .btn {
+        font-family: inherit;
+        font-size: 0.85rem;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+    .btn-refresh {
+        background-color: #008000;
+        border-color: #cbd5e1;
+        color: white;
+    }
+
+        .btn-refresh:hover:not(:disabled) {
+            background-color: #008000;
+            border-color: #94a3b8;
+        }
+
+    .alert {
+        padding: 1rem 1.25rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+    }
+
+    .alert-danger {
+        background-color: #fef2f2;
+        border: 1px solid #fee2e2;
+        color: #991b1b;
+    }
+
+    .state-message {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 2rem;
+        color: #64748b;
+        gap: 1rem;
+    }
+
+    .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #4f46e5;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @@keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
 
 @code {
     private IReadOnlyList<TaskSummaryDto>? _items;

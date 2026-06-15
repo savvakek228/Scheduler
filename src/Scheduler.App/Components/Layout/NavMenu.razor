@@ -1,7 +1,78 @@
-<nav>
-    <a href="/">Главная</a>
-    <a href="/tasks">Задачи</a>
-    <a href="/tasks/create">Создать</a>
-    <a href="/dead-letters">Dead letter</a>
-    <a href="/diagnostics/outbox">Outbox</a>
+<nav class="nav-menu">
+    <a href="/" class="nav-item">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-text">Главная</span>
+    </a>
+    <a href="/tasks" class="nav-item">
+        <span class="nav-icon">📋</span>
+        <span class="nav-text">Задачи</span>
+    </a>
+    <a href="/tasks/create" class="nav-item">
+        <span class="nav-icon">➕</span>
+        <span class="nav-text">Создать задачу</span>
+    </a>
+
+    <a href="/dead-letters" class="nav-item nav-item-danger">
+        <span class="nav-icon">⚠️</span>
+        <span class="nav-text">Dead letter</span>
+    </a>
+    <a href="/diagnostics/outbox" class="nav-item">
+        <span class="nav-icon">📤</span>
+        <span class="nav-text">Outbox</span>
+    </a>
 </nav>
+
+<style>
+    .nav-menu {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        color: #4a5568;
+        text-decoration: none;
+        font-size: 0.95rem;
+        font-weight: 500;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }
+
+        .nav-item:hover {
+            background-color: #f1f5f9;
+            color: #1a202c;
+        }
+
+        .nav-item.active {
+            background-color: #eeebff;
+            color: #4f46e5;
+            font-weight: 600;
+        }
+
+    .nav-icon {
+        font-size: 1.1rem;
+        opacity: 0.8;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+    }
+
+    .nav-divider {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #a0aec0;
+        margin: 1.5rem 0 0.5rem 1rem;
+        font-weight: 700;
+    }
+
+    .nav-item-danger:hover {
+        background-color: #fff5f5;
+        color: #e53e3e;
+    }
+</style>

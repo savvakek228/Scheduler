@@ -3,44 +3,340 @@
 
 <PageTitle>Задача</PageTitle>
 
-@if (_task is null && _error is null)
-{
-    <p>Загрузка…</p>
-}
-else if (_error is not null)
-{
-    <p style="color:#f85149">@_error</p>
-}
-else if (_task is null)
-{
-    <p>Не найдено.</p>
-}
-else
-{
-    <h2>Задача <span class="badge">@_task.Status</span></h2>
-    <div class="card">
-        <p><strong>Id:</strong> <code>@_task.Id</code></p>
-        <p><strong>Run at (UTC):</strong> @_task.RunAt.ToString("u")</p>
-        <p><strong>Попытки:</strong> @_task.AttemptCount</p>
-        @if (_task.NextAttemptAt is not null)
-        {
-            <p><strong>След. попытка (UTC):</strong> @_task.NextAttemptAt.Value.ToString("u")</p>
-        }
-        @if (!string.IsNullOrEmpty(_task.IdempotencyKey))
-        {
-            <p><strong>Idempotency:</strong> @_task.IdempotencyKey</p>
-        }
-        @if (!string.IsNullOrEmpty(_task.LastError))
-        {
-            <p><strong>Последняя ошибка:</strong> @_task.LastError</p>
-        }
-        <label>Payload</label>
-        <pre style="white-space:pre-wrap;background:#0d1117;padding:0.75rem;border-radius:6px;border:1px solid #30363d">@_task.Payload</pre>
-    </div>
-}
+<div class="task-detail-container">
+    @if (_task is null && _error is null)
+    {
+        <div class="state-message">
+            <div class="spinner"></div>
+            <p>Загрузка данных задачи…</p>
+        </div>
+    }
+    else if (_error is not null)
+    {
+        <div class="alert alert-danger">
+            @_error
+        </div>
+        <div class="action-bar" style="margin-top: 1rem;">
+            <button class="btn btn-refresh" @onclick="LoadAsync">Повторить попытку</button>
+            <a class="btn btn-back" href="/tasks">К списку</a>
+        </div>
+    }
+    else if (_task is null)
+    {
+        <div class="state-message">
+            <p>Не найдено.</p>
+        </div>
+        <div class="action-bar" style="justify-content: center; margin-top: 1rem;">
+            <a class="btn btn-back" href="/tasks">К списку</a>
+        </div>
+    }
+    else
+    {
+        <div class="task-header">
+            <div class="header-left">
+                <a class="back-link" href="/tasks">← Назад к списку</a>
+                <h2 class="task-title">
+                    Задача <span class="status-badge status-@_task.Status.ToString().ToLower()">@_task.Status</span>
+                </h2>
+            </div>
+            <button class="btn btn-refresh" @onclick="LoadAsync">
+                Обновить
+            </button>
+        </div>
 
-<button class="btn btn-secondary" @onclick="LoadAsync">Обновить</button>
-<a class="btn btn-secondary" href="/tasks" style="margin-left:.5rem">К списку</a>
+        <div class="grid-layout">
+            <div class="card meta-card">
+                <div class="meta-item">
+                    <span class="meta-label">№</span>
+                    <span class="meta-value value-code"><code>@_task.Id</code></span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Созданно (UTC)</span>
+                    <span class="meta-value">@_task.RunAt.ToString("u")</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Попытки</span>
+                    <span class="meta-value">
+                        <span class="badge-count">@_task.AttemptCount</span>
+                    </span>
+                </div>
+                @if (_task.NextAttemptAt is not null)
+                {
+                    <div class="meta-item accent-item">
+                        <span class="meta-label">След. попытка (UTC)</span>
+                        <span class="meta-value">@_task.NextAttemptAt.Value.ToString("u")</span>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(_task.IdempotencyKey))
+                {
+                    <div class="meta-item">
+                        <span class="meta-label">Idempotency</span>
+                        <span class="meta-value value-code"><code>@_task.IdempotencyKey</code></span>
+                    </div>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(_task.LastError))
+            {
+                <div class="card error-card">
+                    <div class="card-section-title">Последняя ошибка</div>
+                    <pre class="log-block error-block">@_task.LastError</pre>
+                </div>
+            }
+
+            <div class="card payload-card">
+                <div class="card-section-title">Payload</div>
+                <pre class="log-block json-block">@_task.Payload</pre>
+            </div>
+        </div>
+
+        <div class="action-bar" style="margin-top: 0.5rem;">
+            <a class="btn btn-back" href="/tasks">К списку</a>
+        </div>
+    }
+</div>
+
+<style>
+    .task-detail-container {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .task-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        border-bottom: 1px solid #e2e8f0;
+        padding-bottom: 1rem;
+    }
+
+    .header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .back-link {
+        font-size: 0.85rem;
+        color: #64748b;
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+        .back-link:hover {
+            color: #008000;
+        }
+
+    .task-title {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1e293b;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .grid-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        padding: 1.5rem;
+    }
+
+    .card-section-title {
+        font-size: 0.875rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #64748b;
+        margin-bottom: 0.75rem;
+    }
+
+    .meta-card {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1.25rem;
+    }
+
+    .meta-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .accent-item {
+        background-color: #f5f3ff;
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+        border-left: 3px solid #008000;
+    }
+
+    .meta-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+
+    .meta-value {
+        font-size: 0.95rem;
+        color: #1e293b;
+        font-weight: 500;
+    }
+
+    .value-code code {
+        background: #f1f5f9;
+        padding: 0.2rem 0.4rem;
+        border-radius: 4px;
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 0.85rem;
+        color: #334155;
+    }
+
+    .badge-count {
+        background-color: #f1f5f9;
+        color: #475569;
+        padding: 0.15rem 0.5rem;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+
+    .log-block {
+        margin: 0;
+        padding: 1rem;
+        border-radius: 8px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.875rem;
+        white-space: pre-wrap;
+        overflow-x: auto;
+    }
+
+    .json-block {
+        background: #0f172a;
+        color: #38bdf8;
+        border: 1px solid #1e293b;
+    }
+
+    .error-block {
+        background: #fff5f5;
+        color: #c53030;
+        border: 1px solid #fed7d7;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        padding: 0.2rem 0.6rem;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        text-transform: capitalize;
+    }
+
+        .status-badge.status-completed,
+        .status-badge.status-success {
+            background-color: #f0fdf4;
+            color: #166534;
+        }
+
+        .status-badge.status-pending,
+        .status-badge.status-queued {
+            background-color: #fefbc8;
+            color: #713f12;
+        }
+
+        .status-badge.status-failed,
+        .status-badge.status-error {
+            background-color: #fef2f2;
+            color: #991b1b;
+        }
+
+    .action-bar {
+        display: flex;
+        gap: 0.75rem;
+    }
+
+    .btn {
+        font-family: inherit;
+        font-size: 0.85rem;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        display: inline-flex;
+        align-items: center;
+        text-decoration: none;
+    }
+
+    .btn-refresh {
+        background-color: #008000;
+        border-color: #008000;
+        color: white;
+    }
+
+        .btn-refresh:hover {
+            background-color: #008000;
+            border-color: white;
+        }
+
+    .btn-back {
+        background-color: #008000;
+        color: white;
+    }
+
+        .btn-back:hover {
+            background-color: #334155;
+        }
+
+    .alert {
+        padding: 1rem 1.25rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+    }
+
+    .alert-danger {
+        background-color: #fef2f2;
+        border: 1px solid #fee2e2;
+        color: #991b1b;
+    }
+
+    .state-message {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 2rem;
+        color: #64748b;
+        gap: 1rem;
+    }
+
+    .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #008000;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @@keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
 
 @code {
     [Parameter] public Guid Id { get; set; }
