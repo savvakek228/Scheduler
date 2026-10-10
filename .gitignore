@@ -1,15 +1,37 @@
+# SQLite database (local dev)
 /src/Scheduler.App/scheduler.sqlite
 /src/Scheduler.App/scheduler.sqlite-shm
 /src/Scheduler.App/scheduler.sqlite-wal
 
 # Build outputs
+[Bb]in/
+[Oo]bj/
 **/bin/
 **/obj/
+[Bb]uild[Ll]og.*
+*.user
+*.suo
+artifacts/
+publish/
 
-# IDE folders
+# Test results
+TestResults/
+*.trx
+
+# Packaged deployment artifacts
+*.tar.gz
+
+# IDE folders and files
 .idea/
 .vs/
 .vscode/
+*.swp
+
+# Temporary files
+*.tmp
+
+# OS files
+.DS_Store
 
 # Logs and local env files
 *.log
