@@ -1,0 +1,1296 @@
+@page "/outbox-pattern"
+@using System.Globalization
+@using System.Text
+
+<PageTitle>Паттерн Transactional Outbox</PageTitle>
+
+<div class="op-page">
+    <div class="op-header">
+        <h2 class="op-title">Паттерн «Transactional Outbox»</h2>
+        <p class="op-subtitle">
+            Как этот сервис гарантирует надёжное выполнение фоновых задач: интерактивная карта потока,
+            UML-диаграммы и разбор реализации в репозитории.
+        </p>
+    </div>
+
+    <!-- ============================== 1. Проблема ============================== -->
+    <section class="op-card">
+        <h3 class="op-h3">1. Проблема: двойная запись</h3>
+        <p class="op-p">
+            Нужно одновременно <strong>сохранить задачу</strong> в базу данных и <strong>доставить сообщение</strong>
+            в очередь обработки. Это две разные системы, и атомарность между ними отсутствует: процесс может упасть
+            между записью в БД и публикацией сообщения. Результат — задача сохранена, но никогда не будет обработана
+            (или наоборот: сообщение «улетело», а записи нет).
+        </p>
+        <div class="op-svg-wrap">
+            <div class="op-svg-inner">@((MarkupString)ProblemSvg)</div>
+        </div>
+        <p class="op-p">
+            <strong>Transactional Outbox</strong> устраняет разрыв: сообщение о событии записывается в обычную таблицу
+            <code>outbox</code> <em>в той же базе и в той же транзакции</em>, что и бизнес-данные. Атомарность
+            гарантирует сама СУБД. Отдельный фоновый процесс (relay) вычитывает неопубликованные сообщения
+            и доставляет их обработчику.
+        </p>
+    </section>
+
+    <!-- ==================== 2. Интерактивная карта (sequence) ==================== -->
+    <section class="op-card">
+        <h3 class="op-h3">2. Интерактивная карта потока</h3>
+        <p class="op-p">
+            UML sequence-диаграмма полного жизненного цикла задачи в этом сервисе.
+            <strong>Кликните шаг на диаграмме</strong> — под ней появится описание и фрагмент кода из репозитория.
+            Или управляйте шагами кнопками.
+        </p>
+
+        <div class="op-controls">
+            <button class="op-btn op-btn-ghost" @onclick="ResetMap" disabled="@(_selectedStep is null)">⟲ Сброс</button>
+            <button class="op-btn op-btn-ghost" @onclick="PrevStep" disabled="@(_selectedStep is null)">◀ Назад</button>
+            <button class="op-btn op-btn-primary" @onclick="NextStep" disabled="@(_autoPlaying || (_selectedStep ?? -1) >= Steps.Length - 1)">Вперёд ▶</button>
+            <button class="op-btn @(_autoPlaying ? "op-btn-stop" : "op-btn-primary")" @onclick="ToggleAutoAsync">
+                @(_autoPlaying ? "■ Стоп" : "▶ Автопроигрывание")
+            </button>
+            @if (_selectedStep is not null)
+            {
+                <span class="op-progress">Шаг @(_selectedStep + 1) из @Steps.Length</span>
+            }
+        </div>
+
+        <div class="op-svg-wrap">
+            <div class="op-svg-inner op-map">
+                @((MarkupString)SequenceSvg)
+                @for (var i = 0; i < Steps.Length; i++)
+                {
+                    var idx = i;
+                    var step = Steps[idx];
+                    <div class="op-hs op-hs-row @(_selectedStep == idx ? "sel" : "")"
+                         style="@HotspotStyle(0, step.BgY, 1000, step.BgH, SequenceViewH)"
+                         @onclick="() => SelectStep(idx)"></div>
+                }
+            </div>
+        </div>
+
+        <div class="op-legend">
+            <span><span class="op-legend-swatch op-legend-solid"></span> команда</span>
+            <span><span class="op-legend-swatch op-legend-dashed"></span> запрос / ответ</span>
+            <span><span class="op-legend-dot op-legend-green"></span> обычный шаг</span>
+            <span><span class="op-legend-dot op-legend-indigo"></span> ★ ключевой шаг паттерна</span>
+        </div>
+
+        <div class="op-panel">
+            @if (_selectedStep is null)
+            {
+                <div class="op-panel-hint">
+                    <span class="op-hint-icon">👆</span>
+                    <p>
+                        Кликните любой шаг на диаграмме — здесь появится описание, файлы в репозитории
+                        и фрагмент реализации. Или нажмите «Автопроигрывание».
+                    </p>
+                </div>
+            }
+            else
+            {
+                var step = Steps[_selectedStep.Value];
+                <div class="op-panel-body">
+                    <div class="op-panel-head">
+                        <span class="op-panel-num @(step.Key ? "op-num-key" : "op-num-regular")">@(_selectedStep + 1)</span>
+                        <h4 class="op-panel-title">@step.Title</h4>
+                        @if (step.Key)
+                        {
+                            <span class="op-key-badge">ключевой шаг</span>
+                        }
+                    </div>
+                    <p class="op-panel-desc">@step.Description</p>
+                    <div class="op-panel-where">
+                        @foreach (var w in step.Where.Split(" · "))
+                        {
+                            <code class="op-file">@w</code>
+                        }
+                    </div>
+                    <pre class="op-code"><code>@step.Code</code></pre>
+                </div>
+            }
+        </div>
+    </section>
+
+    <!-- ==================== 3. Диаграмма состояний ==================== -->
+    <section class="op-card">
+        <h3 class="op-h3">3. UML: диаграмма состояний задачи</h3>
+        <p class="op-p">
+            Жизненный цикл задачи от создания до результата. <strong>Кликните состояние</strong>, чтобы узнать,
+            что оно означает и какой код переводит задачу в него.
+        </p>
+
+        <div class="op-svg-wrap">
+            <div class="op-svg-inner">
+                @((MarkupString)StatesSvg)
+                @for (var i = 0; i < States.Count; i++)
+                {
+                    var idx = i;
+                    var s = States[idx];
+                    <div class="op-hs op-hs-pill @(_selectedState == idx ? "sel" : "")"
+                         style="@HotspotStyle(s.X, s.Y, 176, 56, StatesViewH)"
+                         @onclick="() => SelectState(idx)"></div>
+                }
+            </div>
+        </div>
+
+        <div class="op-panel">
+            @if (_selectedState is null)
+            {
+                <div class="op-panel-hint">
+                    <span class="op-hint-icon">👆</span>
+                    <p>Кликните состояние на диаграмме, чтобы прочитать описание.</p>
+                </div>
+            }
+            else
+            {
+                var s = States[_selectedState.Value];
+                <div class="op-panel-body">
+                    <div class="op-panel-head">
+                        <span class="op-panel-dot" style="background: @s.Stroke;"></span>
+                        <h4 class="op-panel-title">@s.Label</h4>
+                    </div>
+                    <p class="op-panel-desc">@s.Description</p>
+                    <div class="op-panel-where">
+                        @foreach (var w in s.Where.Split(" · "))
+                        {
+                            <code class="op-file">@w</code>
+                        }
+                    </div>
+                    <pre class="op-code"><code>@s.Code</code></pre>
+                </div>
+            }
+        </div>
+    </section>
+
+    <!-- ==================== 4. Архитектура решения ==================== -->
+    <section class="op-card">
+        <h3 class="op-h3">4. UML: архитектура решения</h3>
+        <p class="op-p">
+            Пять проектов решения и их зависимости (стрелка = «ссылается на»). <strong>Кликните проект</strong>,
+            чтобы увидеть его ответственность и ключевые типы.
+        </p>
+
+        <div class="op-svg-wrap">
+            <div class="op-svg-inner">
+                @((MarkupString)ComponentsSvg)
+                @for (var i = 0; i < Projects.Count; i++)
+                {
+                    var idx = i;
+                    var pr = Projects[idx];
+                    <div class="op-hs op-hs-card @(_selectedProject == idx ? "sel" : "")"
+                         style="@HotspotStyle(pr.X, pr.Y, pr.W, pr.H, ComponentsViewH)"
+                         @onclick="() => SelectProject(idx)"></div>
+                }
+            </div>
+        </div>
+
+        <div class="op-panel">
+            @if (_selectedProject is null)
+            {
+                <div class="op-panel-hint">
+                    <span class="op-hint-icon">👆</span>
+                    <p>Кликните проект на диаграмме, чтобы прочитать описание.</p>
+                </div>
+            }
+            else
+            {
+                var pr = Projects[_selectedProject.Value];
+                <div class="op-panel-body">
+                    <div class="op-panel-head">
+                        <h4 class="op-panel-title">@pr.Name</h4>
+                    </div>
+                    <p class="op-panel-desc">@pr.Description</p>
+                    <div class="op-panel-where">
+                        @foreach (var w in pr.Types.Split(" · "))
+                        {
+                            <code class="op-file">@w</code>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+
+    <!-- ==================== 5. Inbox ==================== -->
+    <section class="op-card">
+        <h3 class="op-h3">5. Inbox: почему повторная доставка не страшна</h3>
+        <p class="op-p">
+            Relay помечает сообщение опубликованным <em>после</em> отправки в канал. Если процесс упадёт между этими
+            действиями, при перезапуске сообщение уйдёт в обработку ещё раз — это и есть семантика
+            <strong>at-least-once</strong>. Чтобы дубли не приводили к повторному выполнению работы, у обработчика есть
+            <strong>inbox</strong>: таблица с уникальным индексом по <code>MessageId</code>. Первая доставка вставляет
+            запись, повторная — получает отказ от СУБД, и обработка молча прекращается.
+        </p>
+        <div class="op-svg-wrap">
+            <div class="op-svg-inner">@((MarkupString)InboxSvg)</div>
+        </div>
+        <p class="op-p">
+            Сообщение, которое циркулирует в системе, — JSON-конверт:
+        </p>
+        <pre class="op-code"><code>{
+  "messageId": "8f3c2a41-…",      // ключ дедупликации в inbox
+  "taskId": "a1b2c3d4-…",         // какая задача обрабатывается
+  "envelopeType": "ProcessTask",
+  "payloadJson": "{\"taskId\":\"a1b2c3d4-…\",\"payload\":\"…\"}"
+}</code></pre>
+    </section>
+
+    <!-- ==================== 6. Повторы и dead letter ==================== -->
+    <section class="op-card">
+        <h3 class="op-h3">6. Повторы с экспоненциальной задержкой и dead letter</h3>
+        <p class="op-p">
+            Если <code>ITaskExecutor</code> бросил исключение, задача не теряется: она возвращается в очередь
+            с <code>LastError</code> и <code>NextAttemptAt = сейчас + 2с · 2ⁿ</code>, а в outbox создаётся новое
+            сообщение. После исчерпания попыток (<code>MaxAttempts = 5</code>) задача попадает в dead letter
+            с причиной и числом попыток — её можно вернуть в очередь кнопкой Replay
+            (<code>POST /api/dead-letters/{id}/replay</code>).
+        </p>
+        <table class="op-table">
+            <thead>
+                <tr>
+                    <th>Сбой на попытке</th>
+                    <th>Расчёт задержки</th>
+                    <th>Пауза до следующей попытки</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>1</td><td>2с × 2¹</td><td>4 секунды</td></tr>
+                <tr><td>2</td><td>2с × 2²</td><td>8 секунд</td></tr>
+                <tr><td>3</td><td>2с × 2³</td><td>16 секунд</td></tr>
+                <tr><td>4</td><td>2с × 2⁴</td><td>32 секунды</td></tr>
+                <tr><td>5</td><td>—</td><td><span class="op-dead-badge">Dead letter</span> попытки исчерпаны</td></tr>
+            </tbody>
+        </table>
+        <p class="op-p">
+            Для проверки политики в payload можно передать <code>failUntilAttempt</code> — количество попыток,
+            завершающихся ошибкой, прежде чем задача выполнится успешно:
+        </p>
+        <pre class="op-code"><code>curl -X POST http://localhost:8080/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+        "payload": "{\"note\":\"демо ретраев\",\"failUntilAttempt\":3}",
+        "runAt": "2026-10-11T12:00:00Z",
+        "idempotencyKey": "order-42"
+      }'
+
+# первые две попытки упадут, третья выполнится успешно;
+# наблюдать статусы: GET /api/tasks и страница «Задачи»</code></pre>
+    </section>
+
+    <!-- ==================== 7. Где что в коде ==================== -->
+    <section class="op-card">
+        <h3 class="op-h3">7. Где что в коде</h3>
+        <table class="op-table">
+            <thead>
+                <tr>
+                    <th>Файл</th>
+                    <th>Ответственность</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>src/Scheduler.App/Api/SchedulerEndpoints.cs</code></td>
+                    <td>Minimal API: создание задач, списки, replay dead letter, диагностика outbox</td>
+                </tr>
+                <tr>
+                    <td><code>src/Scheduler.Application/Scheduling/ScheduleTaskService.cs</code></td>
+                    <td>Планирование: идемпотентность по ключу, сборка задачи + outbox, одна транзакция</td>
+                </tr>
+                <tr>
+                    <td><code>src/Scheduler.App/Hosting/OutboxRelayHostedService.cs</code></td>
+                    <td>Фоновый цикл relay: периодический опрос неопубликованных сообщений</td>
+                </tr>
+                <tr>
+                    <td><code>src/Scheduler.Application/Outbox/OutboxRelayService.cs</code></td>
+                    <td>Публикация конвертов в канал, пометка Published, перевод задачи в Queued</td>
+                </tr>
+                <tr>
+                    <td><code>src/Scheduler.Infrastructure/Messaging/TaskProcessChannel.cs</code></td>
+                    <td>Ограниченный Channel между relay и обработчиком (backpressure через Wait)</td>
+                </tr>
+                <tr>
+                    <td><code>src/Scheduler.App/Hosting/TaskProcessorHostedService.cs</code></td>
+                    <td>Фоновый обработчик: чтение конвертов, DI-scope на сообщение, изоляция сбоев</td>
+                </tr>
+                <tr>
+                    <td><code>src/Scheduler.Application/Processing/TaskMessageProcessor.cs</code></td>
+                    <td>Inbox-дедупликация, откладка по RunAt, оптимистичная блокировка, retry / dead letter</td>
+                </tr>
+                <tr>
+                    <td><code>src/Scheduler.Infrastructure/Persistence/EfSchedulerPersistence.cs</code></td>
+                    <td>Все операции с БД: транзакция задача+outbox, inbox, статусы, dead letter, replay</td>
+                </tr>
+                <tr>
+                    <td><code>src/Scheduler.Infrastructure/Processing/DefaultTaskExecutor.cs</code></td>
+                    <td>Исполнитель по умолчанию: парсинг payload, симуляция сбоев через failUntilAttempt</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+</div>
+
+<style>
+    .op-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        max-width: 1100px;
+        margin: 0 auto;
+        padding-bottom: 2rem;
+    }
+
+    .op-header {
+        border-bottom: 1px solid #e2e8f0;
+        padding-bottom: 1rem;
+    }
+
+    .op-title {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    .op-subtitle {
+        margin: 0;
+        color: #64748b;
+        line-height: 1.55;
+    }
+
+    .op-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        padding: 1.75rem 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .op-h3 {
+        margin: 0;
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    .op-p {
+        margin: 0;
+        color: #334155;
+        line-height: 1.65;
+        font-size: 0.95rem;
+    }
+
+        .op-p code {
+            background: #f1f5f9;
+            color: #0f172a;
+            padding: 0.12rem 0.35rem;
+            border-radius: 4px;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            font-size: 0.85rem;
+        }
+
+    .op-svg-wrap {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 0.75rem;
+        overflow-x: auto;
+    }
+
+    .op-svg-inner {
+        position: relative;
+        min-width: 640px;
+    }
+
+        .op-svg-inner svg {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+    .op-hs {
+        position: absolute;
+        cursor: pointer;
+        border-radius: 9px;
+        transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+        .op-hs:hover {
+            background: rgba(100, 116, 139, 0.08);
+        }
+
+        .op-hs.sel {
+            background: rgba(79, 70, 229, 0.10);
+            box-shadow: inset 0 0 0 2px #4f46e5;
+        }
+
+    .op-hs-pill {
+        border-radius: 28px;
+    }
+
+    .op-hs-card {
+        border-radius: 12px;
+    }
+
+    .op-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.25rem;
+        font-size: 0.82rem;
+        color: #64748b;
+    }
+
+        .op-legend > span {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+    .op-legend-swatch {
+        display: inline-block;
+        width: 26px;
+        height: 0;
+        border-top: 2.5px solid #475569;
+    }
+
+    .op-legend-dashed {
+        border-top-style: dashed;
+        border-top-color: #94a3b8;
+    }
+
+    .op-legend-dot {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+    }
+
+    .op-legend-green {
+        background: #008000;
+    }
+
+    .op-legend-indigo {
+        background: #4f46e5;
+    }
+
+    .op-controls {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+    }
+
+    .op-btn {
+        font-family: inherit;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0.5rem 1.1rem;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+        .op-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+    .op-btn-primary {
+        background: #008000;
+        color: #ffffff;
+    }
+
+        .op-btn-primary:hover:not(:disabled) {
+            background: #006400;
+        }
+
+    .op-btn-ghost {
+        background: #ffffff;
+        color: #475569;
+        border-color: #cbd5e1;
+    }
+
+        .op-btn-ghost:hover:not(:disabled) {
+            background: #f1f5f9;
+        }
+
+    .op-btn-stop {
+        background: #e53e3e;
+        color: #ffffff;
+    }
+
+        .op-btn-stop:hover {
+            background: #c53030;
+        }
+
+    .op-progress {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #4f46e5;
+        margin-left: auto;
+    }
+
+    .op-panel {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 1.25rem 1.5rem;
+        min-height: 120px;
+    }
+
+    .op-panel-hint {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        color: #64748b;
+    }
+
+    .op-hint-icon {
+        font-size: 1.6rem;
+    }
+
+    .op-panel-hint p {
+        margin: 0;
+        line-height: 1.55;
+        font-size: 0.92rem;
+    }
+
+    .op-panel-body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+    }
+
+    .op-panel-head {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        flex-wrap: wrap;
+    }
+
+    .op-panel-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        color: #ffffff;
+        font-size: 0.85rem;
+        font-weight: 700;
+    }
+
+    .op-num-regular {
+        background: #008000;
+    }
+
+    .op-num-key {
+        background: #4f46e5;
+    }
+
+    .op-panel-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+    }
+
+    .op-panel-title {
+        margin: 0;
+        font-size: 1.02rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    .op-key-badge {
+        background: #eeebff;
+        color: #4f46e5;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+    }
+
+    .op-panel-desc {
+        margin: 0;
+        color: #334155;
+        line-height: 1.65;
+        font-size: 0.93rem;
+    }
+
+    .op-panel-where {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    .op-file {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        color: #475569;
+        padding: 0.18rem 0.5rem;
+        border-radius: 5px;
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 0.76rem;
+    }
+
+    .op-code {
+        margin: 0;
+        background: #0f172a;
+        border: 1px solid #1e293b;
+        border-radius: 8px;
+        padding: 0.9rem 1.2rem;
+        overflow-x: auto;
+    }
+
+        .op-code code {
+            background: transparent;
+            color: #7dd3fc;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            font-size: 0.82rem;
+            line-height: 1.55;
+            white-space: pre;
+        }
+
+    .op-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+
+        .op-table th {
+            text-align: left;
+            background: #f1f5f9;
+            color: #475569;
+            font-weight: 700;
+            padding: 0.6rem 0.9rem;
+            border: 1px solid #e2e8f0;
+        }
+
+        .op-table td {
+            padding: 0.55rem 0.9rem;
+            border: 1px solid #e2e8f0;
+            color: #334155;
+        }
+
+        .op-table td code {
+            background: #f1f5f9;
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            font-size: 0.78rem;
+        }
+
+    .op-dead-badge {
+        background: #fef2f2;
+        color: #b91c1c;
+        font-weight: 700;
+        font-size: 0.78rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 4px;
+        margin-right: 0.4rem;
+    }
+
+    @@media (max-width: 720px) {
+        .op-card {
+            padding: 1.25rem 1rem;
+        }
+
+        .op-progress {
+            margin-left: 0;
+        }
+    }
+</style>
+
+@code {
+    private const double SequenceViewH = 850;
+    private const double StatesViewW = 1000;
+    private const double StatesViewH = 330;
+    private const double ComponentsViewH = 430;
+
+    private int? _selectedStep;
+    private int? _selectedState;
+    private int? _selectedProject;
+    private bool _autoPlaying;
+
+    // ---------------- утилиты построения SVG ----------------
+
+    private static string N(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static string HotspotStyle(double x, double y, double w, double h, double viewH)
+    {
+        var viewW = 1000.0;
+        return $"left:{N(x / viewW * 100)}%;top:{N(y / viewH * 100)}%;width:{N(w / viewW * 100)}%;height:{N(h / viewH * 100)}%;";
+    }
+
+    private static string Text(double x, double y, string anchor, double size, string weight, string fill, string content) =>
+        $"<text x=\"{N(x)}\" y=\"{N(y)}\" text-anchor=\"{anchor}\" font-size=\"{N(size)}\" font-weight=\"{weight}\" fill=\"{fill}\">{content}</text>";
+
+    // ---------------- участники sequence-диаграммы ----------------
+
+    private sealed record Participant(int X, string Line1, string Line2);
+
+    private static readonly List<Participant> Participants = new()
+    {
+        new(85, "Клиент", "UI / HTTP"),
+        new(255, "API", "ScheduleTaskService"),
+        new(430, "SQLite", "через EF Core"),
+        new(605, "Outbox Relay", "BackgroundService"),
+        new(770, "Channel", "очередь в памяти"),
+        new(928, "Processor", "+ ITaskExecutor"),
+    };
+
+    private static (double x1, double x2) ArrowSpan(int from, int to)
+    {
+        var x1 = Participants[from].X;
+        var x2 = Participants[to].X;
+        return from < to ? (x1 + 4, x2 - 10) : (x1 - 4, x2 + 10);
+    }
+
+    private static string SelfLoopPath(int at, double y) =>
+        $"M {Participants[at].X} {y} C {Participants[at].X + 44} {y}, {Participants[at].X + 46} {y - 42}, {Participants[at].X + 8} {y - 42}";
+
+    // ---------------- шаги sequence-диаграммы ----------------
+
+    private sealed record SeqArrow(double Y, int From, int To, bool Dashed, string Above, string? Below = null);
+
+    private sealed record SeqStep(
+        string Title,
+        double BgY,
+        double BgH,
+        SeqArrow[] Arrows,
+        bool Key,
+        string Description,
+        string Where,
+        string Code);
+
+    private static readonly SeqStep[] Steps =
+    {
+        new(
+            "Создание задачи по HTTP",
+            66, 52,
+            new[] { new SeqArrow(92, 0, 1, false, "POST /api/tasks", "payload, runAt, idempotencyKey?") },
+            false,
+            "Клиент отправляет POST /api/tasks с полезной нагрузкой, временем запуска runAt и опциональным ключом идемпотентности. Minimal API endpoint принимает CreateTaskRequest и сразу делегирует работу сервису ScheduleTaskService — HTTP-запрос не выполняет бизнес-обработку.",
+            "src/Scheduler.App/Api/SchedulerEndpoints.cs · src/Scheduler.Application/Scheduling/ScheduleTaskService.cs",
+            @"api.MapPost(""/tasks"", async (
+        CreateTaskRequest body,
+        IScheduleTaskService scheduling,
+        CancellationToken ct) =>
+{
+    var result = await scheduling.ScheduleAsync(
+        body.Payload, body.RunAt, body.IdempotencyKey, ct);
+
+    return Results.Created(
+        $""/api/tasks/{result.TaskId}"",
+        new { result.TaskId, result.WasCreated });
+});"),
+        new(
+            "Идемпотентность по ключу",
+            118, 78,
+            new[]
+            {
+                new SeqArrow(144, 1, 2, true, "поиск задачи по IdempotencyKey"),
+                new SeqArrow(170, 2, 1, true, "если найдена — вернуть существующий taskId"),
+            },
+            false,
+            "Если передан IdempotencyKey, сервис сначала ищет задачу с таким ключом. Нашлась — возвращается её taskId (WasCreated: false), дубликат не создаётся. Повторный запрос клиента (например, после таймаута сети) безопасен.",
+            "src/Scheduler.Application/Scheduling/ScheduleTaskService.cs",
+            @"if (!string.IsNullOrWhiteSpace(idempotencyKey))
+{
+    var existing = await persistence
+        .FindTaskByIdempotencyKeyAsync(idempotencyKey, cancellationToken);
+
+    if (existing is not null)
+        return new ScheduleTaskResult(existing.Id, WasCreated: false);
+}"),
+        new(
+            "Транзакция: задача + outbox",
+            206, 52,
+            new[] { new SeqArrow(232, 1, 2, false, "INSERT задачи (Pending) + INSERT outbox", "одна транзакция — один SaveChangesAsync") },
+            true,
+            "Сердце паттерна. Задача (Pending) и сообщение outbox (PendingPublish) вставляются одним вызовом SaveChangesAsync — это одна транзакция SQLite. Либо в БД появляются обе записи, либо ни одной. Даже если процесс упадёт сразу после ответа, сообщение outbox останется в таблице и будет опубликовано позже — задача не «потеряется».",
+            "src/Scheduler.Infrastructure/Persistence/EfSchedulerPersistence.cs",
+            @"public async Task AddTaskWithOutboxAsync(
+    ScheduledTask task, OutboxMessage outbox, CancellationToken ct)
+{
+    db.ScheduledTasks.Add(task);
+    db.OutboxMessages.Add(outbox);
+
+    await db.SaveChangesAsync(ct); // одна транзакция
+}"),
+        new(
+            "Ответ клиенту",
+            262, 52,
+            new[] { new SeqArrow(288, 1, 0, true, "201 Created", "{ taskId, wasCreated }") },
+            false,
+            "Клиент получает 201 Created с taskId и не ждёт, пока задача будет обработана: запись в БД и асинхронная обработка разделены. Обработка начнётся, когда relay опубликует сообщение, а время RunAt подойдёт.",
+            "src/Scheduler.App/Api/SchedulerEndpoints.cs",
+            @"return Results.Created(
+    $""/api/tasks/{result.TaskId}"",
+    new { result.TaskId, result.WasCreated });"),
+        new(
+            "Relay: выборка неопубликованных",
+            318, 52,
+            new[] { new SeqArrow(344, 3, 2, true, "GetPendingOutboxAsync", "WHERE Status = PendingPublish (пакет)") },
+            false,
+            "Фоновый сервис OutboxRelayHostedService циклически вызывает RelayBatchAsync: выгружает пакет сообщений со статусом PendingPublish по порядку Id с ограничением размера. Так публикация отвязана от HTTP-запроса: клиент давно получил ответ, а событие всё равно будет доставлено.",
+            "src/Scheduler.App/Hosting/OutboxRelayHostedService.cs · src/Scheduler.Application/Outbox/OutboxRelayService.cs",
+            @"var pending = await persistence.GetPendingOutboxAsync(batchSize, ct);
+// WHERE Status = PendingPublish
+// ORDER BY Id TAKE @batchSize
+foreach (var msg in pending) { /* шаги 6 и 7 */ }"),
+        new(
+            "Публикация во внутренний канал",
+            374, 52,
+            new[] { new SeqArrow(400, 3, 4, false, "PublishAsync(envelope)", "ограниченный канал, FullMode = Wait") },
+            true,
+            "Конверт OutboxEnvelope (messageId, taskId, тип, JSON) кладётся в ограниченный Channel с режимом Wait: если обработчик не успевает, relay подождёт — переполнения и потери нет. Канал — «шина» внутри процесса: между записью в БД и обработкой нет внешнего брокера, но паттерн остаётся тем же.",
+            "src/Scheduler.Infrastructure/Messaging/TaskProcessChannel.cs",
+            @"_channel = Channel.CreateBounded<OutboxEnvelope>(
+    new BoundedChannelOptions(capacity)
+    {
+        FullMode = BoundedChannelFullMode.Wait
+    });
+
+// ...
+await channel.PublishAsync(envelope, cancellationToken);"),
+        new(
+            "Пометка публикации, задача в очереди",
+            430, 52,
+            new[] { new SeqArrow(456, 3, 2, false, "outbox → Published", "задача Pending → Queued") },
+            false,
+            "После успешной публикации outbox помечается Published (массовым ExecuteUpdate, без загрузки сущности), а задача переводится из Pending в Queued. Если сервис упадёт между шагами 6 и 7, сообщение останется PendingPublish и будет опубликовано ещё раз. Отсюда семантика at-least-once: дубли возможны, и следующая ступень — inbox — обязана их отсекать.",
+            "src/Scheduler.Application/Outbox/OutboxRelayService.cs",
+            @"await channel.PublishAsync(envelope, cancellationToken);
+await persistence.MarkOutboxPublishedAsync(msg.Id, clock.UtcNow, ct);
+await persistence.TrySetTaskQueuedAsync(msg.TaskId, ct);"),
+        new(
+            "Обработчик читает конверт",
+            486, 52,
+            new[] { new SeqArrow(512, 4, 5, false, "ReadAsync() → OutboxEnvelope", "DI-scope создаётся на каждое сообщение") },
+            false,
+            "Второй фоновый сервис TaskProcessorHostedService читает конверты из канала и на каждое сообщение создаёт отдельный DI-scope со своим DbContext. Ошибка обработки одного сообщения не останавливает цикл — она логируется, обработка продолжается со следующим конвертом.",
+            "src/Scheduler.App/Hosting/TaskProcessorHostedService.cs",
+            @"var envelope = await channel.ReadAsync(stoppingToken);
+
+await using var scope = scopeFactory.CreateAsyncScope();
+var processor = scope.ServiceProvider
+    .GetRequiredService<ITaskMessageProcessor>();
+
+await processor.ProcessAsync(envelope, stoppingToken);"),
+        new(
+            "Inbox: дедупликация",
+            550, 52,
+            new[] { new SeqArrow(576, 5, 2, false, "Inbox: INSERT MessageId (уникальный индекс)", "дубль? → обработка прекращена") },
+            true,
+            "Первое действие обработчика — TryInsertInboxAsync: вставка записи с уникальным индексом по MessageId. Если запись уже есть (DbUpdateException) — это повторная доставка, обработка молча прекращается. Именно inbox превращает at-least-once доставку в идемпотентную обработку: работа выполняется ровно один раз.",
+            "src/Scheduler.Infrastructure/Persistence/EfSchedulerPersistence.cs · unique index: AppDbContext.OnModelCreating",
+            @"try
+{
+    await db.SaveChangesAsync(ct);
+    return true;   // первое получение — обрабатываем
+}
+catch (DbUpdateException)
+{
+    db.ChangeTracker.Clear();
+    return false;  // дубль — выходим
+}"),
+        new(
+            "Ранняя задача откладывается",
+            614, 52,
+            new[] { new SeqArrow(640, 5, 2, false, "RunAt в будущем? → DeferUntilAsync", "+ новый outbox с тем же payload") },
+            false,
+            "Если RunAt ещё в будущем, задача не выполняется: DeferUntilAsync ставит NextAttemptAt = RunAt (статус Queued), а в outbox создаётся новое сообщение с тем же payload. Конверт вернётся из очереди позже — когда время подойдёт. Так «планирование на будущее» реализовано тем же самым механизмом доставки.",
+            "src/Scheduler.Application/Processing/TaskMessageProcessor.cs",
+            @"if (task.RunAt > clock.UtcNow)
+{
+    await persistence.DeferUntilAsync(task.Id, task.RunAt, ct);
+    await RequeueOutboxAsync(task.Id, envelope.PayloadJson, ct);
+    return;
+}"),
+        new(
+            "Оптимистичная блокировка → Running",
+            678, 52,
+            new[] { new SeqArrow(704, 5, 2, false, "Version = v ? → Running, Version++", "защита от гонки обработчиков") },
+            false,
+            "TrySetTaskRunningAsync захватывает задачу: проверяет совпадение Version, допустимый статус (Queued или Pending) и окно NextAttemptAt, затем ставит Running и инкрементирует Version. Два параллельных обработчика не смогут выполнить одну задачу дважды — проигравший гонку просто выйдет.",
+            "src/Scheduler.Infrastructure/Persistence/EfSchedulerPersistence.cs",
+            @"if (task is null
+    || task.Version != expectedVersion
+    || (task.Status != TaskStatus.Queued
+        && task.Status != TaskStatus.Pending)
+    || (task.NextAttemptAt.HasValue
+        && task.NextAttemptAt > now))
+    return false;
+
+task.Status = TaskStatus.Running;
+task.Version++;"),
+        new(
+            "Исполнение: успех, повтор или dead letter",
+            744, 84,
+            new[] { new SeqArrow(776, 5, 5, false, "ITaskExecutor.ExecuteAsync", "успех → Completed · ошибка → retry (2с · 2ⁿ) · попытки вышли → DeadLetter") },
+            true,
+            "Вызывается ITaskExecutor (по умолчанию DefaultTaskExecutor). Успех → Completed. Исключение → если попыток ещё нет (attempt меньше MaxAttempts = 5), задача возвращается в Queued с LastError и NextAttemptAt = сейчас + 2с · 2ⁿ, и в outbox создаётся новое сообщение. Попытки исчерпаны → запись в dead letter с причиной и числом попыток, статус DeadLetter. Вернуть в очередь: POST /api/dead-letters/{id}/replay.",
+            "src/Scheduler.Application/Processing/TaskMessageProcessor.cs · src/Scheduler.Infrastructure/Processing/DefaultTaskExecutor.cs",
+            @"await executor.ExecuteAsync(
+    task.Id, envelope.PayloadJson, executionAttempt, ct);
+await persistence.MarkTaskCompletedAsync(task.Id, ct);
+
+// в catch:
+var delay = TimeSpan.FromTicks(retryOptions.BaseDelay.Ticks
+    * (long)Math.Pow(2, failedAttemptNumber));
+
+await persistence.ScheduleRetryAsync(
+    task.Id, ex.Message, clock.UtcNow + delay,
+    failedAttemptNumber, ct);
+
+// либо при attempt >= MaxAttempts:
+await persistence.MoveTaskToDeadLetterAsync(
+    task.Id, ex.Message, failedAttemptNumber, ct);"),
+    };
+
+    // ---------------- диаграмма состояний ----------------
+
+    private sealed record StateNode(
+        string Label,
+        double X,
+        double Y,
+        string Fill,
+        string Stroke,
+        string TextColor,
+        string Description,
+        string Where,
+        string Code);
+
+    private static readonly List<StateNode> States = new()
+    {
+        new("Pending", 42, 50, "#f8fafc", "#64748b", "#334155",
+            "Задача записана в БД вместе с сообщением outbox в одной транзакции, но сообщение ещё не опубликовано в очередь. Из этого состояния задача не может «исчезнуть»: outbox-запись останется в таблице даже при падении процесса.",
+            "src/Scheduler.Application/Scheduling/ScheduleTaskService.cs",
+            @"var task = new ScheduledTask
+{
+    Status = TaskStatus.Pending,
+    IdempotencyKey = idempotencyKey,
+    AttemptCount = 0,
+    Version = 0
+};"),
+        new("Queued", 282, 50, "#f8fafc", "#64748b", "#334155",
+            "Сообщение доставлено во внутренний канал; задача ждёт обработчика. Сюда же задача возвращается при откладке (RunAt в будущем) и при повторе после ошибки — с NextAttemptAt, до которого обработчик её не возьмёт.",
+            "src/Scheduler.Application/Outbox/OutboxRelayService.cs",
+            @"// после публикации outbox:
+await persistence.TrySetTaskQueuedAsync(taskId, ct);
+
+// при retry:
+SetProperty(t => t.Status, TaskStatus.Queued),
+SetProperty(t => t.NextAttemptAt, nextAttemptAt)"),
+        new("Running", 522, 50, "#f8fafc", "#64748b", "#334155",
+            "Задача захвачена обработчиком через оптимистичную блокировку (Version совпал и был инкрементирован), выполняется вызов ITaskExecutor. Гонка двух обработчиков исключена: второй не пройдёт проверку Version.",
+            "src/Scheduler.Infrastructure/Persistence/EfSchedulerPersistence.cs",
+            @"task.Status = TaskStatus.Running;
+task.Version++;
+await db.SaveChangesAsync(ct);"),
+        new("Completed", 782, 50, "#f0fdf4", "#008000", "#166534",
+            "Исполнитель завершился без исключения. Финальный успешный статус: LastError и NextAttemptAt очищаются. Inbox-запись сообщения остаётся — повторная доставка того же конверта будет отброшена.",
+            "src/Scheduler.Infrastructure/Persistence/EfSchedulerPersistence.cs",
+            @"task.Status = TaskStatus.Completed;
+task.LastError = null;
+task.NextAttemptAt = null;
+await db.SaveChangesAsync(ct);"),
+        new("DeadLetter", 522, 210, "#fef2f2", "#e53e3e", "#991b1b",
+            "Попытки исчерпаны (AttemptCount достиг MaxAttempts = 5). Причина последней ошибки и число финальных попыток записаны в таблицу dead letter. Задачу можно вернуть в обычный цикл: кнопка Replay или POST /api/dead-letters/{id}/replay — счётчики сбросятся, будет создан новый outbox.",
+            "src/Scheduler.Application/Processing/TaskMessageProcessor.cs",
+            @"await persistence.MoveTaskToDeadLetterAsync(
+    task.Id,
+    ex.Message,            // причина
+    failedAttemptNumber,   // число финальных попыток
+    ct);"),
+    };
+
+    // ---------------- архитектура ----------------
+
+    private sealed record ProjectNode(
+        string Name,
+        double X,
+        double Y,
+        double W,
+        double H,
+        string Line1,
+        string? Line2,
+        string Description,
+        string Types);
+
+    private static readonly List<ProjectNode> Projects = new()
+    {
+        new("Scheduler.App", 360, 30, 280, 72,
+            "Minimal API · Blazor Server",
+            "2 × BackgroundService",
+            "Точка входа ASP.NET Core: HTTP API и Razor-компоненты UI, два фоновых сервиса (outbox relay и обработчик канала), компоновка зависимостей и создание схемы БД при старте.",
+            "Program.cs · SchedulerEndpoints.cs · OutboxRelayHostedService.cs · TaskProcessorHostedService.cs"),
+        new("Scheduler.Domain", 42, 160, 216, 84,
+            "сущности без зависимостей",
+            null,
+            "Чистые сущности предметной области, не зависящие ни от фреймворков, ни от БД: задача, сообщение outbox, запись inbox, запись dead letter и перечисления статусов.",
+            "ScheduledTask · OutboxMessage · InboxRecord · DeadLetterItem · TaskStatus"),
+        new("Scheduler.Contracts", 42, 290, 216, 84,
+            "DTO для API и UI",
+            null,
+            "Контракты обмена данными между HTTP API, UI и приложением. Не зависят ни от одного проекта — остальные ссылаются на них, но не наоборот.",
+            "CreateTaskRequest · TaskResponse · TaskSummaryDto · DeadLetterDto · OutboxItemDto"),
+        new("Scheduler.Application", 360, 160, 280, 108,
+            "сценарии использования",
+            "весь I/O — через интерфейсы",
+            "Бизнес-логика: планирование задач, relay, обработка сообщений, запросы на чтение. Зависит только от Domain и Contracts; база данных, канал и исполнитель спрятаны за интерфейсами ISchedulerPersistence, ITaskProcessChannel, ITaskExecutor, IClock.",
+            "ScheduleTaskService · OutboxRelayService · TaskMessageProcessor · RetryPolicyOptions"),
+        new("Scheduler.Infrastructure", 700, 160, 258, 108,
+            "реализации адаптеров",
+            "EF Core 9 + SQLite",
+            "Технические реализации интерфейсов приложения: контекст EF Core с уникальными индексами outbox и inbox, ограниченный Channel, исполнитель по умолчанию с симуляцией сбоев.",
+            "AppDbContext · EfSchedulerPersistence · TaskProcessChannel · DefaultTaskExecutor"),
+    };
+
+    // ---------------- построение статических SVG ----------------
+
+    private static readonly string ProblemSvg = BuildProblemSvg();
+    private static readonly string SequenceSvg = BuildSequenceSvg();
+    private static readonly string StatesSvg = BuildStatesSvg();
+    private static readonly string ComponentsSvg = BuildComponentsSvg();
+    private static readonly string InboxSvg = BuildInboxSvg();
+
+    private static string BuildProblemSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 720 210\" role=\"img\" aria-label=\"Проблема двойной записи\">");
+        sb.Append("<defs><marker id=\"op-pb-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#64748b\"/></marker></defs>");
+        sb.Append("<rect x=\"20\" y=\"70\" width=\"150\" height=\"60\" rx=\"10\" fill=\"#f8fafc\" stroke=\"#94a3b8\"/>");
+        sb.Append(Text(95, 95, "middle", 13, "700", "#334155", "HTTP-запрос"));
+        sb.Append(Text(95, 113, "middle", 11, "400", "#64748b", "создать задачу"));
+        sb.Append("<line x1=\"170\" y1=\"88\" x2=\"262\" y2=\"88\" stroke=\"#64748b\" stroke-width=\"1.6\" marker-end=\"url(#op-pb-arr)\"/>");
+        sb.Append("<line x1=\"170\" y1=\"118\" x2=\"262\" y2=\"118\" stroke=\"#64748b\" stroke-width=\"1.6\" marker-end=\"url(#op-pb-arr)\"/>");
+        sb.Append("<rect x=\"266\" y=\"58\" width=\"160\" height=\"52\" rx=\"8\" fill=\"#f0fdf4\" stroke=\"#008000\"/>");
+        sb.Append(Text(346, 80, "middle", 12.5, "600", "#166534", "INSERT в БД"));
+        sb.Append(Text(346, 98, "middle", 11, "400", "#15803d", "успешно ✓"));
+        sb.Append("<rect x=\"266\" y=\"120\" width=\"160\" height=\"52\" rx=\"8\" fill=\"#fef2f2\" stroke=\"#e53e3e\"/>");
+        sb.Append(Text(346, 142, "middle", 12.5, "600", "#991b1b", "Публикация в очередь"));
+        sb.Append(Text(346, 160, "middle", 11, "400", "#b91c1c", "процесс упал ✗"));
+        sb.Append(Text(470, 86, "start", 12.5, "600", "#166534", "задача «висит» в базе,"));
+        sb.Append(Text(470, 103, "start", 12.5, "600", "#166534", "но обработка не начнётся"));
+        sb.Append(Text(470, 148, "start", 12.5, "400", "#64748b", "данные и события"));
+        sb.Append(Text(470, 165, "start", 12.5, "400", "#64748b", "рассинхронизированы"));
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private static string BuildSequenceSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 1000 850\" role=\"img\" aria-label=\"Интерактивная sequence-диаграмма transactional outbox\">");
+        sb.Append("<defs>");
+        sb.Append("<marker id=\"op-seq-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#475569\"/></marker>");
+        sb.Append("<marker id=\"op-seq-arr-dim\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#94a3b8\"/></marker>");
+        sb.Append("</defs>");
+
+        foreach (var p in Participants)
+        {
+            sb.Append($"<rect x=\"{p.X - 70}\" y=\"10\" width=\"140\" height=\"44\" rx=\"9\" fill=\"#ffffff\" stroke=\"#94a3b8\"/>");
+            sb.Append(Text(p.X, 29, "middle", 12.5, "700", "#1e293b", p.Line1));
+            sb.Append(Text(p.X, 45, "middle", 10.5, "400", "#64748b", p.Line2));
+            sb.Append($"<line x1=\"{p.X}\" y1=\"54\" x2=\"{p.X}\" y2=\"838\" stroke=\"#cbd5e1\" stroke-width=\"1.2\" stroke-dasharray=\"5 5\"/>");
+        }
+
+        for (var i = 0; i < Steps.Length; i++)
+        {
+            var step = Steps[i];
+            var badgeFill = step.Key ? "#4f46e5" : "#008000";
+            var star = step.Key ? "★ " : "";
+
+            sb.Append($"<g class=\"op-sstep\">");
+            sb.Append($"<rect x=\"8\" y=\"{N(step.BgY)}\" width=\"984\" height=\"{N(step.BgH)}\" rx=\"9\" fill=\"#ffffff\" fill-opacity=\"0.01\" stroke=\"none\"/>");
+            sb.Append($"<circle cx=\"26\" cy=\"{N(step.BgY + step.BgH / 2)}\" r=\"11\" fill=\"{badgeFill}\"/>");
+            sb.Append(Text(26, step.BgY + step.BgH / 2 + 4, "middle", 11.5, "700", "#ffffff", (i + 1).ToString(CultureInfo.InvariantCulture)));
+
+            foreach (var arrow in step.Arrows)
+            {
+                if (arrow.From == arrow.To)
+                {
+                    sb.Append($"<path d=\"{SelfLoopPath(arrow.From, arrow.Y)}\" fill=\"none\" stroke=\"#475569\" stroke-width=\"1.6\" marker-end=\"url(#op-seq-arr)\"/>");
+                    sb.Append(Text(Participants[arrow.From].X - 16, arrow.Y - 18, "end", 12.5, "600", "#334155", star + arrow.Above));
+                    if (arrow.Below is not null)
+                        sb.Append(Text(Participants[arrow.From].X - 16, arrow.Y + 26, "end", 11.5, "400", "#64748b", arrow.Below));
+                }
+                else
+                {
+                    var span = ArrowSpan(arrow.From, arrow.To);
+                    var mid = (Participants[arrow.From].X + Participants[arrow.To].X) / 2.0;
+                    var dash = arrow.Dashed ? " stroke-dasharray=\"6 4\"" : "";
+                    var marker = arrow.Dashed ? "url(#op-seq-arr-dim)" : "url(#op-seq-arr)";
+                    var stroke = arrow.Dashed ? "#94a3b8" : "#475569";
+                    sb.Append($"<line x1=\"{N(span.x1)}\" y1=\"{N(arrow.Y)}\" x2=\"{N(span.x2)}\" y2=\"{N(arrow.Y)}\" stroke=\"{stroke}\" stroke-width=\"1.6\"{dash} marker-end=\"{marker}\"/>");
+                    sb.Append(Text(mid, arrow.Y - 7, "middle", 12.5, "600", "#334155", star + arrow.Above));
+                    if (arrow.Below is not null)
+                        sb.Append(Text(mid, arrow.Y + 17, "middle", 11.5, "400", "#64748b", arrow.Below));
+                }
+            }
+
+            sb.Append("</g>");
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private static string BuildStatesSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 1000 330\" role=\"img\" aria-label=\"Диаграмма состояний задачи\">");
+        sb.Append("<defs>");
+        sb.Append("<marker id=\"op-st-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#64748b\"/></marker>");
+        sb.Append("<marker id=\"op-st-arr-retry\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#d97706\"/></marker>");
+        sb.Append("<marker id=\"op-st-arr-dead\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#e53e3e\"/></marker>");
+        sb.Append("<marker id=\"op-st-arr-replay\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#4f46e5\"/></marker>");
+        sb.Append("</defs>");
+
+        sb.Append("<line x1=\"222\" y1=\"78\" x2=\"278\" y2=\"78\" stroke=\"#64748b\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr)\"/>");
+        sb.Append(Text(250, 68, "middle", 11, "400", "#64748b", "outbox опубликован"));
+        sb.Append("<line x1=\"462\" y1=\"78\" x2=\"518\" y2=\"78\" stroke=\"#64748b\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr)\"/>");
+        sb.Append(Text(490, 68, "middle", 11, "400", "#64748b", "Version совпал"));
+        sb.Append("<line x1=\"702\" y1=\"78\" x2=\"778\" y2=\"78\" stroke=\"#64748b\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr)\"/>");
+        sb.Append(Text(740, 68, "middle", 11, "400", "#64748b", "успех"));
+        sb.Append("<path d=\"M 560 106 C 500 165, 430 165, 376 114\" fill=\"none\" stroke=\"#d97706\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr-retry)\"/>");
+        sb.Append(Text(470, 156, "middle", 11, "400", "#b45309", "ошибка → retry, задержка 2с · 2ⁿ"));
+        sb.Append("<line x1=\"610\" y1=\"106\" x2=\"610\" y2=\"206\" stroke=\"#e53e3e\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr-dead)\"/>");
+        sb.Append(Text(622, 150, "start", 11, "400", "#b91c1c", "попытки исчерпаны (≥ 5)"));
+        sb.Append("<path d=\"M 520 238 C 400 238, 362 190, 368 112\" fill=\"none\" stroke=\"#4f46e5\" stroke-width=\"1.8\" stroke-dasharray=\"6 4\" marker-end=\"url(#op-st-arr-replay)\"/>");
+        sb.Append(Text(400, 232, "start", 11, "400", "#4f46e5", "replay"));
+
+        foreach (var s in States)
+        {
+            sb.Append($"<rect x=\"{N(s.X)}\" y=\"{N(s.Y)}\" width=\"176\" height=\"56\" rx=\"28\" fill=\"{s.Fill}\" stroke=\"{s.Stroke}\" stroke-width=\"1.8\"/>");
+            sb.Append(Text(s.X + 88, s.Y + 33, "middle", 14, "700", s.TextColor, s.Label));
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private static string BuildComponentsSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 1000 430\" role=\"img\" aria-label=\"Диаграмма компонентов решения\">");
+        sb.Append("<defs><marker id=\"op-cd-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#94a3b8\"/></marker></defs>");
+
+        sb.Append("<line x1=\"500\" y1=\"102\" x2=\"500\" y2=\"152\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+        sb.Append("<path d=\"M 640 62 C 820 62, 840 100, 840 152\" fill=\"none\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+        sb.Append("<line x1=\"700\" y1=\"210\" x2=\"648\" y2=\"210\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+        sb.Append("<line x1=\"360\" y1=\"200\" x2=\"268\" y2=\"200\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+        sb.Append("<path d=\"M 420 268 C 420 315, 330 315, 268 315\" fill=\"none\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+
+        foreach (var pr in Projects)
+        {
+            sb.Append($"<rect x=\"{N(pr.X)}\" y=\"{N(pr.Y)}\" width=\"{N(pr.W)}\" height=\"{N(pr.H)}\" rx=\"12\" fill=\"#ffffff\" stroke=\"#cbd5e1\" stroke-width=\"1.6\"/>");
+            sb.Append(Text(pr.X + pr.W / 2, pr.Y + 26, "middle", 14, "700", "#1e293b", pr.Name));
+            sb.Append(Text(pr.X + pr.W / 2, pr.Y + 46, "middle", 10.5, "400", "#64748b", pr.Line1));
+            if (pr.Line2 is not null)
+                sb.Append(Text(pr.X + pr.W / 2, pr.Y + 61, "middle", 10.5, "400", "#64748b", pr.Line2));
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private static string BuildInboxSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 720 200\" role=\"img\" aria-label=\"Дедупликация через inbox\">");
+        sb.Append("<defs>");
+        sb.Append("<marker id=\"op-ib-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#64748b\"/></marker>");
+        sb.Append("<marker id=\"op-ib-arr-red\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#e53e3e\"/></marker>");
+        sb.Append("</defs>");
+        sb.Append("<rect x=\"20\" y=\"55\" width=\"170\" height=\"90\" rx=\"10\" fill=\"#f8fafc\" stroke=\"#94a3b8\"/>");
+        sb.Append(Text(105, 90, "middle", 12.5, "600", "#334155", "Канал"));
+        sb.Append(Text(105, 110, "middle", 11, "400", "#64748b", "сообщение №7"));
+        sb.Append(Text(105, 128, "middle", 11, "400", "#64748b", "доставлено 2 раза"));
+        sb.Append("<line x1=\"190\" y1=\"80\" x2=\"300\" y2=\"62\" stroke=\"#64748b\" stroke-width=\"1.6\" marker-end=\"url(#op-ib-arr)\"/>");
+        sb.Append(Text(245, 52, "middle", 11, "400", "#64748b", "доставка 1"));
+        sb.Append("<line x1=\"190\" y1=\"120\" x2=\"300\" y2=\"140\" stroke=\"#e53e3e\" stroke-width=\"1.6\" stroke-dasharray=\"6 4\" marker-end=\"url(#op-ib-arr-red)\"/>");
+        sb.Append(Text(245, 152, "middle", 11, "400", "#b91c1c", "доставка 2 (дубль)"));
+        sb.Append("<rect x=\"306\" y=\"48\" width=\"190\" height=\"64\" rx=\"10\" fill=\"#f0fdf4\" stroke=\"#008000\"/>");
+        sb.Append(Text(401, 72, "middle", 12, "600", "#166534", "INSERT в inbox ✓"));
+        sb.Append(Text(401, 94, "middle", 11, "400", "#15803d", "MessageId новый → обрабатываем"));
+        sb.Append("<rect x=\"306\" y=\"128\" width=\"190\" height=\"56\" rx=\"10\" fill=\"#fef2f2\" stroke=\"#e53e3e\"/>");
+        sb.Append(Text(401, 150, "middle", 12, "600", "#991b1b", "UNIQUE violation ✗"));
+        sb.Append(Text(401, 170, "middle", 11, "400", "#b91c1c", "дубль → выход без обработки"));
+        sb.Append(Text(540, 100, "start", 12.5, "600", "#334155", "работа выполнена"));
+        sb.Append(Text(540, 120, "start", 12.5, "600", "#334155", "ровно один раз,"));
+        sb.Append(Text(540, 140, "start", 12.5, "600", "#334155", "несмотря на дубли"));
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    // ---------------- взаимодействие ----------------
+
+    private void SelectStep(int index)
+    {
+        _autoPlaying = false;
+        _selectedStep = _selectedStep == index ? null : index;
+    }
+
+    private void SelectState(int index) =>
+        _selectedState = _selectedState == index ? null : index;
+
+    private void SelectProject(int index) =>
+        _selectedProject = _selectedProject == index ? null : index;
+
+    private void ResetMap()
+    {
+        _autoPlaying = false;
+        _selectedStep = null;
+    }
+
+    private void PrevStep()
+    {
+        _autoPlaying = false;
+        _selectedStep = _selectedStep is > 0 ? _selectedStep - 1 : null;
+    }
+
+    private void NextStep() =>
+        _selectedStep = Math.Min((_selectedStep ?? -1) + 1, Steps.Length - 1);
+
+    private async Task ToggleAutoAsync()
+    {
+        if (_autoPlaying)
+        {
+            _autoPlaying = false;
+            return;
+        }
+
+        _autoPlaying = true;
+        if (_selectedStep is null)
+            _selectedStep = -1;
+
+        try
+        {
+            while (_autoPlaying && _selectedStep < Steps.Length - 1)
+            {
+                _selectedStep++;
+                StateHasChanged();
+                await Task.Delay(2400);
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // страница закрыта во время проигрывания
+        }
+        finally
+        {
+            _autoPlaying = false;
+        }
+    }
+
+    public void Dispose() => _autoPlaying = false;
+}
