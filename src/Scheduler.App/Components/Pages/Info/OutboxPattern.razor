@@ -1,4 +1,6 @@
 @page "/outbox-pattern"
+@using System.Globalization
+@using System.Text
 
 <PageTitle>Паттерн Transactional Outbox</PageTitle>
 
@@ -21,32 +23,7 @@
             (или наоборот: сообщение «улетело», а записи нет).
         </p>
         <div class="op-svg-wrap">
-            <svg viewBox="0 0 720 210" role="img" aria-label="Проблема двойной записи">
-                <defs>
-                    <marker id="op-pb-arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#64748b" />
-                    </marker>
-                </defs>
-                <rect x="20" y="70" width="150" height="60" rx="10" fill="#f8fafc" stroke="#94a3b8" />
-                <text><tspan x="95" y="95" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">HTTP-запрос</tspan></text>
-                <text><tspan x="95" y="113" text-anchor="middle" font-size="11" fill="#64748b">создать задачу</tspan></text>
-
-                <line x1="170" y1="88" x2="262" y2="88" stroke="#64748b" stroke-width="1.6" marker-end="url(#op-pb-arr)" />
-                <line x1="170" y1="118" x2="262" y2="118" stroke="#64748b" stroke-width="1.6" marker-end="url(#op-pb-arr)" />
-
-                <rect x="266" y="58" width="160" height="52" rx="8" fill="#f0fdf4" stroke="#008000" />
-                <text><tspan x="346" y="80" text-anchor="middle" font-size="12.5" font-weight="600" fill="#166534">INSERT в БД</tspan></text>
-                <text><tspan x="346" y="98" text-anchor="middle" font-size="11" fill="#15803d">успешно ✓</tspan></text>
-
-                <rect x="266" y="120" width="160" height="52" rx="8" fill="#fef2f2" stroke="#e53e3e" />
-                <text><tspan x="346" y="142" text-anchor="middle" font-size="12.5" font-weight="600" fill="#991b1b">Публикация в очередь</tspan></text>
-                <text><tspan x="346" y="160" text-anchor="middle" font-size="11" fill="#b91c1c">процесс упал ✗</tspan></text>
-
-                <text><tspan x="470" y="86" font-size="12.5" fill="#166534" font-weight="600">задача «висит» в базе,</tspan></text>
-                <text><tspan x="470" y="103" font-size="12.5" fill="#166534" font-weight="600">но обработка не начнётся</tspan></text>
-                <text><tspan x="470" y="148" font-size="12.5" fill="#64748b">данные и события</tspan></text>
-                <text><tspan x="470" y="165" font-size="12.5" fill="#64748b">рассинхронизированы</tspan></text>
-            </svg>
+            <div class="op-svg-inner">@((MarkupString)ProblemSvg)</div>
         </div>
         <p class="op-p">
             <strong>Transactional Outbox</strong> устраняет разрыв: сообщение о событии записывается в обычную таблицу
@@ -78,90 +55,18 @@
             }
         </div>
 
-        <div class="op-svg-wrap op-map-wrap">
-            <svg viewBox="0 0 1000 850" role="img" aria-label="Интерактивная sequence-диаграмма transactional outbox">
-                <defs>
-                    <marker id="op-seq-arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#475569" />
-                    </marker>
-                    <marker id="op-seq-arr-dim" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#94a3b8" />
-                    </marker>
-                    <marker id="op-seq-arr-sel" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#4f46e5" />
-                    </marker>
-                </defs>
-
-                @* ---- участники ---- *@
-                @foreach (var p in Participants)
-                {
-                    <rect x="@(p.X - 70)" y="10" width="140" height="44" rx="9"
-                          fill="#ffffff" stroke="@(_selectedStep is null ? "#94a3b8" : "#64748b")" />
-                    <text><tspan x="@p.X" y="29" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e293b">@p.Line1</tspan></text>
-                    <text><tspan x="@p.X" y="45" text-anchor="middle" font-size="10.5" fill="#64748b">@p.Line2</tspan></text>
-                    <line x1="@p.X" y1="54" x2="@p.X" y2="838" stroke="#cbd5e1" stroke-width="1.2" stroke-dasharray="5 5" />
-                }
-
-                @* ---- шаги ---- *@
+        <div class="op-svg-wrap">
+            <div class="op-svg-inner op-map">
+                @((MarkupString)SequenceSvg)
                 @for (var i = 0; i < Steps.Length; i++)
                 {
-                    var step = Steps[i];
                     var idx = i;
-                    var isSelected = _selectedStep == idx;
-                    var isDimmed = _selectedStep is not null && !isSelected;
-                    var opacity = isDimmed ? 0.32 : 1.0;
-                    var bgFill = isSelected ? "#eef2ff" : "transparent";
-                    var bgStroke = isSelected ? "#4f46e5" : "transparent";
-                    var stroke = isSelected ? "#4f46e5" : "#475569";
-                    var dashStroke = isSelected ? "#4f46e5" : "#94a3b8";
-                    var width = isSelected ? 2.4 : 1.6;
-                    var marker = isSelected ? "url(#op-seq-arr-sel)" : "url(#op-seq-arr)";
-                    var markerDim = isSelected ? "url(#op-seq-arr-sel)" : "url(#op-seq-arr-dim)";
-                    var badgeFill = step.Key ? "#4f46e5" : "#008000";
-
-                    <g class="op-seq-step" @onclick="() => SelectStep(idx)" opacity="@opacity">
-                        <rect x="8" y="@step.BgY" width="984" height="@step.BgH" rx="9"
-                              fill="@bgFill" stroke="@bgStroke" stroke-width="1.4" />
-
-                        <circle cx="26" cy="@(step.BgY + step.BgH / 2)" r="11" fill="@badgeFill" />
-                        <text><tspan x="26" y="@(step.BgY + step.BgH / 2 + 4)" text-anchor="middle"
-                                     font-size="11.5" font-weight="700" fill="#ffffff">@(idx + 1)</tspan></text>
-
-                        @foreach (var arrow in step.Arrows)
-                        {
-                            var span = ArrowSpan(arrow.From, arrow.To);
-                            var mid = (Participants[arrow.From].X + Participants[arrow.To].X) / 2.0;
-                            if (arrow.From == arrow.To)
-                            {
-                                <path d="@SelfLoopPath(arrow.From, arrow.Y)" fill="none"
-                                      stroke="@stroke" stroke-width="@width" marker-end="@marker" />
-                                <text><tspan x="@(Participants[arrow.From].X - 16)" y="@(arrow.Y - 18)"
-                                             text-anchor="end" font-size="12.5" font-weight="600" fill="#334155">@(step.Key ? "★ " : "")@arrow.Above</tspan></text>
-                                if (arrow.Below is not null)
-                                {
-                                    <text><tspan x="@(Participants[arrow.From].X - 16)" y="@(arrow.Y + 26)"
-                                                 text-anchor="end" font-size="11.5" fill="#64748b">@arrow.Below</tspan></text>
-                                }
-                            }
-                            else
-                            {
-                                <line x1="@span.x1" y1="@arrow.Y" x2="@span.x2" y2="@arrow.Y"
-                                      stroke="@(arrow.Dashed ? dashStroke : stroke)"
-                                      stroke-width="@width"
-                                      stroke-dasharray="@(arrow.Dashed ? "6 4" : null)"
-                                      marker-end="@(arrow.Dashed ? markerDim : marker)" />
-                                <text><tspan x="@mid" y="@(arrow.Y - 7)" text-anchor="middle"
-                                             font-size="12.5" font-weight="600" fill="#334155">@(step.Key ? "★ " : "")@arrow.Above</tspan></text>
-                                if (arrow.Below is not null)
-                                {
-                                    <text><tspan x="@mid" y="@(arrow.Y + 17)" text-anchor="middle"
-                                                 font-size="11.5" fill="#64748b">@arrow.Below</tspan></text>
-                                }
-                            }
-                        }
-                    </g>
+                    var step = Steps[idx];
+                    <div class="op-hs op-hs-row @(_selectedStep == idx ? "sel" : "")"
+                         style="@HotspotStyle(0, step.BgY, 1000, step.BgH, SequenceViewH)"
+                         @onclick="() => SelectStep(idx)"></div>
                 }
-            </svg>
+            </div>
         </div>
 
         <div class="op-legend">
@@ -216,55 +121,17 @@
         </p>
 
         <div class="op-svg-wrap">
-            <svg viewBox="0 0 1000 330" role="img" aria-label="Диаграмма состояний задачи">
-                <defs>
-                    <marker id="op-st-arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#64748b" />
-                    </marker>
-                    <marker id="op-st-arr-retry" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#d97706" />
-                    </marker>
-                    <marker id="op-st-arr-dead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#e53e3e" />
-                    </marker>
-                    <marker id="op-st-arr-replay" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#4f46e5" />
-                    </marker>
-                </defs>
-
-                @* переходы *@
-                <line x1="222" y1="78" x2="278" y2="78" stroke="#64748b" stroke-width="1.8" marker-end="url(#op-st-arr)" />
-                <text><tspan x="250" y="68" text-anchor="middle" font-size="11" fill="#64748b">outbox опубликован</tspan></text>
-
-                <line x1="462" y1="78" x2="518" y2="78" stroke="#64748b" stroke-width="1.8" marker-end="url(#op-st-arr)" />
-                <text><tspan x="490" y="68" text-anchor="middle" font-size="11" fill="#64748b">Version совпал</tspan></text>
-
-                <line x1="702" y1="78" x2="778" y2="78" stroke="#64748b" stroke-width="1.8" marker-end="url(#op-st-arr)" />
-                <text><tspan x="740" y="68" text-anchor="middle" font-size="11" fill="#64748b">успех</tspan></text>
-
-                <path d="M 560 106 C 500 165, 430 165, 376 114" fill="none" stroke="#d97706" stroke-width="1.8" marker-end="url(#op-st-arr-retry)" />
-                <text><tspan x="470" y="156" text-anchor="middle" font-size="11" fill="#b45309">ошибка → retry, задержка 2с · 2ⁿ</tspan></text>
-
-                <line x1="610" y1="106" x2="610" y2="206" stroke="#e53e3e" stroke-width="1.8" marker-end="url(#op-st-arr-dead)" />
-                <text><tspan x="622" y="150" font-size="11" fill="#b91c1c">попытки исчерпаны (≥ 5)</tspan></text>
-
-                <path d="M 520 238 C 400 238, 362 190, 368 112" fill="none" stroke="#4f46e5" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#op-st-arr-replay)" />
-                <text><tspan x="400" y="232" font-size="11" fill="#4f46e5">replay</tspan></text>
-
-                @* состояния *@
-                @foreach (var s in States)
+            <div class="op-svg-inner">
+                @((MarkupString)StatesSvg)
+                @for (var i = 0; i < States.Count; i++)
                 {
-                    var idx = States.IndexOf(s);
-                    var isSelected = _selectedState == idx;
-                    <g class="op-state" @onclick="() => SelectState(idx)">
-                        <rect x="@s.X" y="@s.Y" width="176" height="56" rx="28"
-                              fill="@(isSelected ? s.FillSelected : s.Fill)"
-                              stroke="@(isSelected ? "#1e293b" : s.Stroke)" stroke-width="@(isSelected ? 2.6 : 1.8)" />
-                        <text><tspan x="@(s.X + 88)" y="@(s.Y + 33)" text-anchor="middle"
-                                     font-size="14" font-weight="700" fill="@s.TextColor">@s.Label</tspan></text>
-                    </g>
+                    var idx = i;
+                    var s = States[idx];
+                    <div class="op-hs op-hs-pill @(_selectedState == idx ? "sel" : "")"
+                         style="@HotspotStyle(s.X, s.Y, 176, 56, StatesViewH)"
+                         @onclick="() => SelectState(idx)"></div>
                 }
-            </svg>
+            </div>
         </div>
 
         <div class="op-panel">
@@ -305,40 +172,17 @@
         </p>
 
         <div class="op-svg-wrap">
-            <svg viewBox="0 0 1000 430" role="img" aria-label="Диаграмма компонентов решения">
-                <defs>
-                    <marker id="op-cd-arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#94a3b8" />
-                    </marker>
-                </defs>
-
-                @* зависимости *@
-                <line x1="500" y1="102" x2="500" y2="152" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#op-cd-arr)" />
-                <path d="M 640 62 C 820 62, 840 100, 840 152" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#op-cd-arr)" />
-                <line x1="700" y1="210" x2="648" y2="210" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#op-cd-arr)" />
-                <line x1="360" y1="200" x2="268" y2="200" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#op-cd-arr)" />
-                <path d="M 420 268 C 420 315, 330 315, 268 315" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#op-cd-arr)" />
-
-                @foreach (var pr in Projects)
+            <div class="op-svg-inner">
+                @((MarkupString)ComponentsSvg)
+                @for (var i = 0; i < Projects.Count; i++)
                 {
-                    var idx = Projects.IndexOf(pr);
-                    var isSelected = _selectedProject == idx;
-                    <g class="op-project" @onclick="() => SelectProject(idx)">
-                        <rect x="@pr.X" y="@pr.Y" width="@pr.W" height="@pr.H" rx="12"
-                              fill="@(isSelected ? "#eef2ff" : "#ffffff")"
-                              stroke="@(isSelected ? "#4f46e5" : "#cbd5e1")" stroke-width="@(isSelected ? 2.4 : 1.6)" />
-                        <text><tspan x="@(pr.X + pr.W / 2.0)" y="@(pr.Y + 26)" text-anchor="middle"
-                                     font-size="14" font-weight="700" fill="@(isSelected ? "#4f46e5" : "#1e293b")">@pr.Name</tspan></text>
-                        <text><tspan x="@(pr.X + pr.W / 2.0)" y="@(pr.Y + 46)" text-anchor="middle"
-                                     font-size="10.5" fill="#64748b">@pr.Line1</tspan></text>
-                        @if (pr.Line2 is not null)
-                        {
-                            <text><tspan x="@(pr.X + pr.W / 2.0)" y="@(pr.Y + 61)" text-anchor="middle"
-                                         font-size="10.5" fill="#64748b">@pr.Line2</tspan></text>
-                        }
-                    </g>
+                    var idx = i;
+                    var pr = Projects[idx];
+                    <div class="op-hs op-hs-card @(_selectedProject == idx ? "sel" : "")"
+                         style="@HotspotStyle(pr.X, pr.Y, pr.W, pr.H, ComponentsViewH)"
+                         @onclick="() => SelectProject(idx)"></div>
                 }
-            </svg>
+            </div>
         </div>
 
         <div class="op-panel">
@@ -379,37 +223,7 @@
             запись, повторная — получает отказ от СУБД, и обработка молча прекращается.
         </p>
         <div class="op-svg-wrap">
-            <svg viewBox="0 0 720 200" role="img" aria-label="Дедупликация через inbox">
-                <defs>
-                    <marker id="op-ib-arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#64748b" />
-                    </marker>
-                    <marker id="op-ib-arr-red" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-                        <path d="M0,0 L10,4 L0,8 z" fill="#e53e3e" />
-                    </marker>
-                </defs>
-                <rect x="20" y="55" width="170" height="90" rx="10" fill="#f8fafc" stroke="#94a3b8" />
-                <text><tspan x="105" y="90" text-anchor="middle" font-size="12.5" font-weight="600" fill="#334155">Канал</tspan></text>
-                <text><tspan x="105" y="110" text-anchor="middle" font-size="11" fill="#64748b">сообщение №7</tspan></text>
-                <text><tspan x="105" y="128" text-anchor="middle" font-size="11" fill="#64748b">доставлено 2 раза</tspan></text>
-
-                <line x1="190" y1="80" x2="300" y2="62" stroke="#64748b" stroke-width="1.6" marker-end="url(#op-ib-arr)" />
-                <text><tspan x="245" y="52" text-anchor="middle" font-size="11" fill="#64748b">доставка 1</tspan></text>
-                <line x1="190" y1="120" x2="300" y2="140" stroke="#e53e3e" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#op-ib-arr-red)" />
-                <text><tspan x="245" y="152" text-anchor="middle" font-size="11" fill="#b91c1c">доставка 2 (дубль)</tspan></text>
-
-                <rect x="306" y="48" width="190" height="64" rx="10" fill="#f0fdf4" stroke="#008000" />
-                <text><tspan x="401" y="72" text-anchor="middle" font-size="12" font-weight="600" fill="#166534">INSERT в inbox ✓</tspan></text>
-                <text><tspan x="401" y="94" text-anchor="middle" font-size="11" fill="#15803d">MessageId новый → обрабатываем</tspan></text>
-
-                <rect x="306" y="128" width="190" height="56" rx="10" fill="#fef2f2" stroke="#e53e3e" />
-                <text><tspan x="401" y="150" text-anchor="middle" font-size="12" font-weight="600" fill="#991b1b">UNIQUE violation ✗</tspan></text>
-                <text><tspan x="401" y="170" text-anchor="middle" font-size="11" fill="#b91c1c">дубль → выход без обработки</tspan></text>
-
-                <text><tspan x="540" y="100" font-size="12.5" fill="#334155" font-weight="600">работа выполнена</tspan></text>
-                <text><tspan x="540" y="120" font-size="12.5" fill="#334155" font-weight="600">ровно один раз,</tspan></text>
-                <text><tspan x="540" y="140" font-size="12.5" fill="#334155" font-weight="600">несмотря на дубли</tspan></text>
-            </svg>
+            <div class="op-svg-inner">@((MarkupString)InboxSvg)</div>
         </div>
         <p class="op-p">
             Сообщение, которое циркулирует в системе, — JSON-конверт:
@@ -586,17 +400,39 @@
         overflow-x: auto;
     }
 
-        .op-svg-wrap svg {
+    .op-svg-inner {
+        position: relative;
+        min-width: 640px;
+    }
+
+        .op-svg-inner svg {
             display: block;
             width: 100%;
             height: auto;
-            min-width: 640px;
         }
 
-    .op-seq-step,
-    .op-state,
-    .op-project {
+    .op-hs {
+        position: absolute;
         cursor: pointer;
+        border-radius: 9px;
+        transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+        .op-hs:hover {
+            background: rgba(100, 116, 139, 0.08);
+        }
+
+        .op-hs.sel {
+            background: rgba(79, 70, 229, 0.10);
+            box-shadow: inset 0 0 0 2px #4f46e5;
+        }
+
+    .op-hs-pill {
+        border-radius: 28px;
+    }
+
+    .op-hs-card {
+        border-radius: 12px;
     }
 
     .op-legend {
@@ -872,10 +708,28 @@
 </style>
 
 @code {
+    private const double SequenceViewH = 850;
+    private const double StatesViewW = 1000;
+    private const double StatesViewH = 330;
+    private const double ComponentsViewH = 430;
+
     private int? _selectedStep;
     private int? _selectedState;
     private int? _selectedProject;
     private bool _autoPlaying;
+
+    // ---------------- утилиты построения SVG ----------------
+
+    private static string N(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static string HotspotStyle(double x, double y, double w, double h, double viewH)
+    {
+        var viewW = 1000.0;
+        return $"left:{N(x / viewW * 100)}%;top:{N(y / viewH * 100)}%;width:{N(w / viewW * 100)}%;height:{N(h / viewH * 100)}%;";
+    }
+
+    private static string Text(double x, double y, string anchor, double size, string weight, string fill, string content) =>
+        $"<text x=\"{N(x)}\" y=\"{N(y)}\" text-anchor=\"{anchor}\" font-size=\"{N(size)}\" font-weight=\"{weight}\" fill=\"{fill}\">{content}</text>";
 
     // ---------------- участники sequence-диаграммы ----------------
 
@@ -1108,7 +962,6 @@ await persistence.MoveTaskToDeadLetterAsync(
         double X,
         double Y,
         string Fill,
-        string FillSelected,
         string Stroke,
         string TextColor,
         string Description,
@@ -1117,7 +970,7 @@ await persistence.MoveTaskToDeadLetterAsync(
 
     private static readonly List<StateNode> States = new()
     {
-        new("Pending", 42, 50, "#f8fafc", "#eef2ff", "#64748b", "#334155",
+        new("Pending", 42, 50, "#f8fafc", "#64748b", "#334155",
             "Задача записана в БД вместе с сообщением outbox в одной транзакции, но сообщение ещё не опубликовано в очередь. Из этого состояния задача не может «исчезнуть»: outbox-запись останется в таблице даже при падении процесса.",
             "src/Scheduler.Application/Scheduling/ScheduleTaskService.cs",
             @"var task = new ScheduledTask
@@ -1127,7 +980,7 @@ await persistence.MoveTaskToDeadLetterAsync(
     AttemptCount = 0,
     Version = 0
 };"),
-        new("Queued", 282, 50, "#f8fafc", "#eef2ff", "#64748b", "#334155",
+        new("Queued", 282, 50, "#f8fafc", "#64748b", "#334155",
             "Сообщение доставлено во внутренний канал; задача ждёт обработчика. Сюда же задача возвращается при откладке (RunAt в будущем) и при повторе после ошибки — с NextAttemptAt, до которого обработчик её не возьмёт.",
             "src/Scheduler.Application/Outbox/OutboxRelayService.cs",
             @"// после публикации outbox:
@@ -1136,20 +989,20 @@ await persistence.TrySetTaskQueuedAsync(taskId, ct);
 // при retry:
 SetProperty(t => t.Status, TaskStatus.Queued),
 SetProperty(t => t.NextAttemptAt, nextAttemptAt)"),
-        new("Running", 522, 50, "#f8fafc", "#eef2ff", "#64748b", "#334155",
+        new("Running", 522, 50, "#f8fafc", "#64748b", "#334155",
             "Задача захвачена обработчиком через оптимистичную блокировку (Version совпал и был инкрементирован), выполняется вызов ITaskExecutor. Гонка двух обработчиков исключена: второй не пройдёт проверку Version.",
             "src/Scheduler.Infrastructure/Persistence/EfSchedulerPersistence.cs",
             @"task.Status = TaskStatus.Running;
 task.Version++;
 await db.SaveChangesAsync(ct);"),
-        new("Completed", 782, 50, "#f0fdf4", "#dcfce7", "#008000", "#166534",
+        new("Completed", 782, 50, "#f0fdf4", "#008000", "#166534",
             "Исполнитель завершился без исключения. Финальный успешный статус: LastError и NextAttemptAt очищаются. Inbox-запись сообщения остаётся — повторная доставка того же конверта будет отброшена.",
             "src/Scheduler.Infrastructure/Persistence/EfSchedulerPersistence.cs",
             @"task.Status = TaskStatus.Completed;
 task.LastError = null;
 task.NextAttemptAt = null;
 await db.SaveChangesAsync(ct);"),
-        new("DeadLetter", 522, 210, "#fef2f2", "#fee2e2", "#e53e3e", "#991b1b",
+        new("DeadLetter", 522, 210, "#fef2f2", "#e53e3e", "#991b1b",
             "Попытки исчерпаны (AttemptCount достиг MaxAttempts = 5). Причина последней ошибки и число финальных попыток записаны в таблицу dead letter. Задачу можно вернуть в обычный цикл: кнопка Replay или POST /api/dead-letters/{id}/replay — счётчики сбросятся, будет создан новый outbox.",
             "src/Scheduler.Application/Processing/TaskMessageProcessor.cs",
             @"await persistence.MoveTaskToDeadLetterAsync(
@@ -1200,6 +1053,184 @@ await db.SaveChangesAsync(ct);"),
             "Технические реализации интерфейсов приложения: контекст EF Core с уникальными индексами outbox и inbox, ограниченный Channel, исполнитель по умолчанию с симуляцией сбоев.",
             "AppDbContext · EfSchedulerPersistence · TaskProcessChannel · DefaultTaskExecutor"),
     };
+
+    // ---------------- построение статических SVG ----------------
+
+    private static readonly string ProblemSvg = BuildProblemSvg();
+    private static readonly string SequenceSvg = BuildSequenceSvg();
+    private static readonly string StatesSvg = BuildStatesSvg();
+    private static readonly string ComponentsSvg = BuildComponentsSvg();
+    private static readonly string InboxSvg = BuildInboxSvg();
+
+    private static string BuildProblemSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 720 210\" role=\"img\" aria-label=\"Проблема двойной записи\">");
+        sb.Append("<defs><marker id=\"op-pb-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#64748b\"/></marker></defs>");
+        sb.Append("<rect x=\"20\" y=\"70\" width=\"150\" height=\"60\" rx=\"10\" fill=\"#f8fafc\" stroke=\"#94a3b8\"/>");
+        sb.Append(Text(95, 95, "middle", 13, "700", "#334155", "HTTP-запрос"));
+        sb.Append(Text(95, 113, "middle", 11, "400", "#64748b", "создать задачу"));
+        sb.Append("<line x1=\"170\" y1=\"88\" x2=\"262\" y2=\"88\" stroke=\"#64748b\" stroke-width=\"1.6\" marker-end=\"url(#op-pb-arr)\"/>");
+        sb.Append("<line x1=\"170\" y1=\"118\" x2=\"262\" y2=\"118\" stroke=\"#64748b\" stroke-width=\"1.6\" marker-end=\"url(#op-pb-arr)\"/>");
+        sb.Append("<rect x=\"266\" y=\"58\" width=\"160\" height=\"52\" rx=\"8\" fill=\"#f0fdf4\" stroke=\"#008000\"/>");
+        sb.Append(Text(346, 80, "middle", 12.5, "600", "#166534", "INSERT в БД"));
+        sb.Append(Text(346, 98, "middle", 11, "400", "#15803d", "успешно ✓"));
+        sb.Append("<rect x=\"266\" y=\"120\" width=\"160\" height=\"52\" rx=\"8\" fill=\"#fef2f2\" stroke=\"#e53e3e\"/>");
+        sb.Append(Text(346, 142, "middle", 12.5, "600", "#991b1b", "Публикация в очередь"));
+        sb.Append(Text(346, 160, "middle", 11, "400", "#b91c1c", "процесс упал ✗"));
+        sb.Append(Text(470, 86, "start", 12.5, "600", "#166534", "задача «висит» в базе,"));
+        sb.Append(Text(470, 103, "start", 12.5, "600", "#166534", "но обработка не начнётся"));
+        sb.Append(Text(470, 148, "start", 12.5, "400", "#64748b", "данные и события"));
+        sb.Append(Text(470, 165, "start", 12.5, "400", "#64748b", "рассинхронизированы"));
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private static string BuildSequenceSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 1000 850\" role=\"img\" aria-label=\"Интерактивная sequence-диаграмма transactional outbox\">");
+        sb.Append("<defs>");
+        sb.Append("<marker id=\"op-seq-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#475569\"/></marker>");
+        sb.Append("<marker id=\"op-seq-arr-dim\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#94a3b8\"/></marker>");
+        sb.Append("</defs>");
+
+        foreach (var p in Participants)
+        {
+            sb.Append($"<rect x=\"{p.X - 70}\" y=\"10\" width=\"140\" height=\"44\" rx=\"9\" fill=\"#ffffff\" stroke=\"#94a3b8\"/>");
+            sb.Append(Text(p.X, 29, "middle", 12.5, "700", "#1e293b", p.Line1));
+            sb.Append(Text(p.X, 45, "middle", 10.5, "400", "#64748b", p.Line2));
+            sb.Append($"<line x1=\"{p.X}\" y1=\"54\" x2=\"{p.X}\" y2=\"838\" stroke=\"#cbd5e1\" stroke-width=\"1.2\" stroke-dasharray=\"5 5\"/>");
+        }
+
+        for (var i = 0; i < Steps.Length; i++)
+        {
+            var step = Steps[i];
+            var badgeFill = step.Key ? "#4f46e5" : "#008000";
+            var star = step.Key ? "★ " : "";
+
+            sb.Append($"<g class=\"op-sstep\">");
+            sb.Append($"<rect x=\"8\" y=\"{N(step.BgY)}\" width=\"984\" height=\"{N(step.BgH)}\" rx=\"9\" fill=\"#ffffff\" fill-opacity=\"0.01\" stroke=\"none\"/>");
+            sb.Append($"<circle cx=\"26\" cy=\"{N(step.BgY + step.BgH / 2)}\" r=\"11\" fill=\"{badgeFill}\"/>");
+            sb.Append(Text(26, step.BgY + step.BgH / 2 + 4, "middle", 11.5, "700", "#ffffff", (i + 1).ToString(CultureInfo.InvariantCulture)));
+
+            foreach (var arrow in step.Arrows)
+            {
+                if (arrow.From == arrow.To)
+                {
+                    sb.Append($"<path d=\"{SelfLoopPath(arrow.From, arrow.Y)}\" fill=\"none\" stroke=\"#475569\" stroke-width=\"1.6\" marker-end=\"url(#op-seq-arr)\"/>");
+                    sb.Append(Text(Participants[arrow.From].X - 16, arrow.Y - 18, "end", 12.5, "600", "#334155", star + arrow.Above));
+                    if (arrow.Below is not null)
+                        sb.Append(Text(Participants[arrow.From].X - 16, arrow.Y + 26, "end", 11.5, "400", "#64748b", arrow.Below));
+                }
+                else
+                {
+                    var span = ArrowSpan(arrow.From, arrow.To);
+                    var mid = (Participants[arrow.From].X + Participants[arrow.To].X) / 2.0;
+                    var dash = arrow.Dashed ? " stroke-dasharray=\"6 4\"" : "";
+                    var marker = arrow.Dashed ? "url(#op-seq-arr-dim)" : "url(#op-seq-arr)";
+                    var stroke = arrow.Dashed ? "#94a3b8" : "#475569";
+                    sb.Append($"<line x1=\"{N(span.x1)}\" y1=\"{N(arrow.Y)}\" x2=\"{N(span.x2)}\" y2=\"{N(arrow.Y)}\" stroke=\"{stroke}\" stroke-width=\"1.6\"{dash} marker-end=\"{marker}\"/>");
+                    sb.Append(Text(mid, arrow.Y - 7, "middle", 12.5, "600", "#334155", star + arrow.Above));
+                    if (arrow.Below is not null)
+                        sb.Append(Text(mid, arrow.Y + 17, "middle", 11.5, "400", "#64748b", arrow.Below));
+                }
+            }
+
+            sb.Append("</g>");
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private static string BuildStatesSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 1000 330\" role=\"img\" aria-label=\"Диаграмма состояний задачи\">");
+        sb.Append("<defs>");
+        sb.Append("<marker id=\"op-st-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#64748b\"/></marker>");
+        sb.Append("<marker id=\"op-st-arr-retry\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#d97706\"/></marker>");
+        sb.Append("<marker id=\"op-st-arr-dead\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#e53e3e\"/></marker>");
+        sb.Append("<marker id=\"op-st-arr-replay\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#4f46e5\"/></marker>");
+        sb.Append("</defs>");
+
+        sb.Append("<line x1=\"222\" y1=\"78\" x2=\"278\" y2=\"78\" stroke=\"#64748b\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr)\"/>");
+        sb.Append(Text(250, 68, "middle", 11, "400", "#64748b", "outbox опубликован"));
+        sb.Append("<line x1=\"462\" y1=\"78\" x2=\"518\" y2=\"78\" stroke=\"#64748b\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr)\"/>");
+        sb.Append(Text(490, 68, "middle", 11, "400", "#64748b", "Version совпал"));
+        sb.Append("<line x1=\"702\" y1=\"78\" x2=\"778\" y2=\"78\" stroke=\"#64748b\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr)\"/>");
+        sb.Append(Text(740, 68, "middle", 11, "400", "#64748b", "успех"));
+        sb.Append("<path d=\"M 560 106 C 500 165, 430 165, 376 114\" fill=\"none\" stroke=\"#d97706\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr-retry)\"/>");
+        sb.Append(Text(470, 156, "middle", 11, "400", "#b45309", "ошибка → retry, задержка 2с · 2ⁿ"));
+        sb.Append("<line x1=\"610\" y1=\"106\" x2=\"610\" y2=\"206\" stroke=\"#e53e3e\" stroke-width=\"1.8\" marker-end=\"url(#op-st-arr-dead)\"/>");
+        sb.Append(Text(622, 150, "start", 11, "400", "#b91c1c", "попытки исчерпаны (≥ 5)"));
+        sb.Append("<path d=\"M 520 238 C 400 238, 362 190, 368 112\" fill=\"none\" stroke=\"#4f46e5\" stroke-width=\"1.8\" stroke-dasharray=\"6 4\" marker-end=\"url(#op-st-arr-replay)\"/>");
+        sb.Append(Text(400, 232, "start", 11, "400", "#4f46e5", "replay"));
+
+        foreach (var s in States)
+        {
+            sb.Append($"<rect x=\"{N(s.X)}\" y=\"{N(s.Y)}\" width=\"176\" height=\"56\" rx=\"28\" fill=\"{s.Fill}\" stroke=\"{s.Stroke}\" stroke-width=\"1.8\"/>");
+            sb.Append(Text(s.X + 88, s.Y + 33, "middle", 14, "700", s.TextColor, s.Label));
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private static string BuildComponentsSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 1000 430\" role=\"img\" aria-label=\"Диаграмма компонентов решения\">");
+        sb.Append("<defs><marker id=\"op-cd-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#94a3b8\"/></marker></defs>");
+
+        sb.Append("<line x1=\"500\" y1=\"102\" x2=\"500\" y2=\"152\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+        sb.Append("<path d=\"M 640 62 C 820 62, 840 100, 840 152\" fill=\"none\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+        sb.Append("<line x1=\"700\" y1=\"210\" x2=\"648\" y2=\"210\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+        sb.Append("<line x1=\"360\" y1=\"200\" x2=\"268\" y2=\"200\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+        sb.Append("<path d=\"M 420 268 C 420 315, 330 315, 268 315\" fill=\"none\" stroke=\"#94a3b8\" stroke-width=\"1.6\" marker-end=\"url(#op-cd-arr)\"/>");
+
+        foreach (var pr in Projects)
+        {
+            sb.Append($"<rect x=\"{N(pr.X)}\" y=\"{N(pr.Y)}\" width=\"{N(pr.W)}\" height=\"{N(pr.H)}\" rx=\"12\" fill=\"#ffffff\" stroke=\"#cbd5e1\" stroke-width=\"1.6\"/>");
+            sb.Append(Text(pr.X + pr.W / 2, pr.Y + 26, "middle", 14, "700", "#1e293b", pr.Name));
+            sb.Append(Text(pr.X + pr.W / 2, pr.Y + 46, "middle", 10.5, "400", "#64748b", pr.Line1));
+            if (pr.Line2 is not null)
+                sb.Append(Text(pr.X + pr.W / 2, pr.Y + 61, "middle", 10.5, "400", "#64748b", pr.Line2));
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private static string BuildInboxSvg()
+    {
+        var sb = new StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 720 200\" role=\"img\" aria-label=\"Дедупликация через inbox\">");
+        sb.Append("<defs>");
+        sb.Append("<marker id=\"op-ib-arr\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#64748b\"/></marker>");
+        sb.Append("<marker id=\"op-ib-arr-red\" markerWidth=\"10\" markerHeight=\"8\" refX=\"9\" refY=\"4\" orient=\"auto\"><path d=\"M0,0 L10,4 L0,8 z\" fill=\"#e53e3e\"/></marker>");
+        sb.Append("</defs>");
+        sb.Append("<rect x=\"20\" y=\"55\" width=\"170\" height=\"90\" rx=\"10\" fill=\"#f8fafc\" stroke=\"#94a3b8\"/>");
+        sb.Append(Text(105, 90, "middle", 12.5, "600", "#334155", "Канал"));
+        sb.Append(Text(105, 110, "middle", 11, "400", "#64748b", "сообщение №7"));
+        sb.Append(Text(105, 128, "middle", 11, "400", "#64748b", "доставлено 2 раза"));
+        sb.Append("<line x1=\"190\" y1=\"80\" x2=\"300\" y2=\"62\" stroke=\"#64748b\" stroke-width=\"1.6\" marker-end=\"url(#op-ib-arr)\"/>");
+        sb.Append(Text(245, 52, "middle", 11, "400", "#64748b", "доставка 1"));
+        sb.Append("<line x1=\"190\" y1=\"120\" x2=\"300\" y2=\"140\" stroke=\"#e53e3e\" stroke-width=\"1.6\" stroke-dasharray=\"6 4\" marker-end=\"url(#op-ib-arr-red)\"/>");
+        sb.Append(Text(245, 152, "middle", 11, "400", "#b91c1c", "доставка 2 (дубль)"));
+        sb.Append("<rect x=\"306\" y=\"48\" width=\"190\" height=\"64\" rx=\"10\" fill=\"#f0fdf4\" stroke=\"#008000\"/>");
+        sb.Append(Text(401, 72, "middle", 12, "600", "#166534", "INSERT в inbox ✓"));
+        sb.Append(Text(401, 94, "middle", 11, "400", "#15803d", "MessageId новый → обрабатываем"));
+        sb.Append("<rect x=\"306\" y=\"128\" width=\"190\" height=\"56\" rx=\"10\" fill=\"#fef2f2\" stroke=\"#e53e3e\"/>");
+        sb.Append(Text(401, 150, "middle", 12, "600", "#991b1b", "UNIQUE violation ✗"));
+        sb.Append(Text(401, 170, "middle", 11, "400", "#b91c1c", "дубль → выход без обработки"));
+        sb.Append(Text(540, 100, "start", 12.5, "600", "#334155", "работа выполнена"));
+        sb.Append(Text(540, 120, "start", 12.5, "600", "#334155", "ровно один раз,"));
+        sb.Append(Text(540, 140, "start", 12.5, "600", "#334155", "несмотря на дубли"));
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
 
     // ---------------- взаимодействие ----------------
 
