@@ -29,6 +29,7 @@ TestResults/
 
 # Temporary files
 *.tmp
+.hostkeys*
 
 # OS files
 .DS_Store
