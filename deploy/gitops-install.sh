@@ -14,7 +14,20 @@ NGINX_SITE="/etc/nginx/sites-available/savvakam2.chickenkiller.com"
 echo "Installing GitOps for Scheduler..."
 
 apt-get update -qq
-apt-get install -y -qq git webhook
+apt-get install -y -qq git webhook curl python3
+
+# webhook >= 2.7.0 is required for the payload-hmac-sha256 trigger rule used
+# below. Debian 11 ships 2.6.9, which silently ignores unknown rule types and
+# never fires the hook, so fall back to the upstream binary when needed.
+WEBHOOK_VERSION="$(webhook -version 2>/dev/null | awk '{print $NF}')"
+if [ -z "$WEBHOOK_VERSION" ] || [ "$(printf '%s\n' "$WEBHOOK_VERSION" "2.7.0" | sort -V | head -n1)" != "2.7.0" ]; then
+  WEBHOOK_ARCH="$(dpkg --print-architecture)"
+  echo "webhook >= 2.7.0 not found (found: ${WEBHOOK_VERSION:-none}); installing 2.8.3 from GitHub releases"
+  WEBHOOK_TMP="$(mktemp -d)"
+  curl -fsSL "https://github.com/adnanh/webhook/releases/download/2.8.3/webhook-linux-${WEBHOOK_ARCH}.tar.gz" | tar -xz -C "$WEBHOOK_TMP"
+  install -m 0755 "${WEBHOOK_TMP}/webhook-linux-${WEBHOOK_ARCH}/webhook" /usr/bin/webhook
+  rm -rf "$WEBHOOK_TMP"
+fi
 
 mkdir -p "$CONFIG_DIR" /var/log
 chmod 700 "$CONFIG_DIR"
