@@ -34,7 +34,7 @@
     else
     {
         <div class="card">
-            <table class="outbox-table">
+            <table class="outbox-table responsive-cards">
                 <thead>
                     <tr>
                         <th>№</th>
@@ -50,21 +50,21 @@
                     @foreach (var o in _items)
                     {
                         <tr>
-                            <td class="cell-id">@o.Id</td>
-                            <td class="cell-code">
+                            <td class="cell-id" data-label="№">@o.Id</td>
+                            <td class="cell-code" data-label="№ Сообщения">
                                 <code title="@o.MessageId">@o.MessageId.ToString("N")[..12]…</code>
                             </td>
-                            <td class="cell-code">
+                            <td class="cell-code" data-label="№ Задачи">
                                 <a href="/tasks/@o.TaskId" class="task-link">
                                     <code title="@o.TaskId">@o.TaskId.ToString("N")[..8]…</code>
                                 </a>
                             </td>
-                            <td class="cell-type">@o.EnvelopeType</td>
-                            <td>
+                            <td class="cell-type" data-label="Тип">@o.EnvelopeType</td>
+                            <td data-label="Статус">
                                 <span class="status-badge status-@o.Status.ToString().ToLower()">@o.Status</span>
                             </td>
-                            <td class="cell-date">@o.CreatedAt.ToString("u")</td>
-                            <td class="cell-date">@(o.PublishedAt?.ToString("u") ?? "—")</td>
+                            <td class="cell-date" data-label="Созданно">@o.CreatedAt.ToString("u")</td>
+                            <td class="cell-date" data-label="Опубликовано">@(o.PublishedAt?.ToString("u") ?? "—")</td>
                         </tr>
                     }
                 </tbody>

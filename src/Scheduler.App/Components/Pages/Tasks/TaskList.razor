@@ -34,7 +34,7 @@
     else
     {
         <div class="card">
-            <table class="tasks-table">
+            <table class="tasks-table responsive-cards">
                 <thead>
                     <tr>
                         <th>№</th>
@@ -48,17 +48,17 @@
                     @foreach (var t in _items)
                     {
                         <tr>
-                            <td class="cell-id">
+                            <td class="cell-id" data-label="№">
                                 <code title="@t.Id">@t.Id.ToString("N")[..8]…</code>
                             </td>
-                            <td class="cell-date">@t.RunAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                            <td>
+                            <td class="cell-date" data-label="Созданно (UTC)">@t.RunAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td data-label="Статус">
                                 <span class="status-badge status-@t.Status.ToString().ToLower()">@t.Status</span>
                             </td>
-                            <td>
+                            <td data-label="Попытки">
                                 <span class="badge-count">@t.AttemptCount</span>
                             </td>
-                            <td style="text-align: right;">
+                            <td style="text-align: right;" data-label="">
                                 <a href="/tasks/@t.Id" class="btn-open">Открыть</a>
                             </td>
                         </tr>
